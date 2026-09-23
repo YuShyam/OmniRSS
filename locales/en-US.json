@@ -1,0 +1,86 @@
+{
+  "app": {
+    "title": "OmniRSS",
+    "tagline": "Modern High-Density Universal RSS Hub"
+  },
+  "nav": {
+    "all_feeds": "All Feeds",
+    "starred": "Starred",
+    "unread": "Unread Articles",
+    "categories": "Categories",
+    "tags": "Tags",
+    "plugins": "Plugin Center",
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+  "tree": {
+    "add_category": "New Category",
+    "add_feed": "Add Feed",
+    "import_opml": "Import OPML",
+    "export_opml": "Export OPML",
+    "refresh_all": "Refresh All",
+    "mark_all_read": "Mark All Read",
+    "uncategorized": "Uncategorized"
+  },
+  "columns": {
+    "is_read": "Status",
+    "is_starred": "★",
+    "title": "Title",
+    "feed_title": "Feed",
+    "published_at": "Published",
+    "author": "Author",
+    "tags": "Tags",
+    "has_image": "Media",
+    "column_picker_title": "Customize Columns",
+    "reset_columns": "Reset to QuiteRSS Default"
+  },
+  "article": {
+    "mark_read": "Mark as Read",
+    "mark_unread": "Mark as Unread",
+    "star": "Star",
+    "unstar": "Unstar",
+    "ai_summary_title": "Gemini AI Key Points",
+    "ai_generating": "Generating AI summary...",
+    "ai_cached": "Cached",
+    "open_original": "Open in New Tab",
+    "copy_link": "Copy Link",
+    "no_selection": "Select an article from the list above to start reading"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "retention": "Article Retention",
+    "retention_forever": "Keep Forever (0 days)",
+    "days_suffix": "days",
+    "theme": "Theme",
+    "theme_dark": "Dark",
+    "theme_light": "Light",
+    "theme_system": "System",
+    "api_key_title": "Personal Relay / Web Clipper API Key",
+    "generate_key": "🎲 Generate Key",
+    "copy_key": "📋 Copy",
+    "save_success": "Settings saved successfully"
+  },
+  "plugins": {
+    "title": "Plugin Management",
+    "installed": "Installed",
+    "marketplace": "Marketplace",
+    "slot_source": "Source Slot",
+    "slot_processor": "Processor Slot",
+    "slot_layout": "Layout Slot",
+    "slot_action": "Action Slot",
+    "status_active": "Active",
+    "status_tripped": "⚠️ Tripped (Circuit Breaker)",
+    "reset_circuit": "Reset Circuit",
+    "author": "Author",
+    "version": "Version"
+  },
+  "auth": {
+    "login_title": "OmniRSS Login",
+    "username": "Username",
+    "password": "Password",
+    "login_button": "Sign In",
+    "setup_title": "Create Administrator Account",
+    "invalid_credentials": "Invalid username or password"
+  }
+}

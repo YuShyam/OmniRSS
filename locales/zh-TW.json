@@ -1,0 +1,86 @@
+{
+  "app": {
+    "title": "OmniRSS",
+    "tagline": "高密度現代全能 RSS 聚合閱讀器"
+  },
+  "nav": {
+    "all_feeds": "所有訂閱",
+    "starred": "星號收藏",
+    "unread": "未讀文章",
+    "categories": "分類目錄",
+    "tags": "標籤體系",
+    "plugins": "外掛中心",
+    "settings": "系統設定",
+    "logout": "登出"
+  },
+  "tree": {
+    "add_category": "新增分類",
+    "add_feed": "新增訂閱源",
+    "import_opml": "匯入 OPML",
+    "export_opml": "匯出 OPML",
+    "refresh_all": "全部重新整理",
+    "mark_all_read": "全部標為已讀",
+    "uncategorized": "未分類訂閱"
+  },
+  "columns": {
+    "is_read": "狀態",
+    "is_starred": "★",
+    "title": "標題",
+    "feed_title": "來源頻道",
+    "published_at": "發布時間",
+    "author": "作者",
+    "tags": "標籤",
+    "has_image": "附圖",
+    "column_picker_title": "欄位自訂顯示",
+    "reset_columns": "重置為 QuiteRSS 預設"
+  },
+  "article": {
+    "mark_read": "標為已讀",
+    "mark_unread": "標為未讀",
+    "star": "加星收藏",
+    "unstar": "取消收藏",
+    "ai_summary_title": "Gemini AI 繁中重點摘要",
+    "ai_generating": "AI 深度摘要生成中...",
+    "ai_cached": "已快取",
+    "open_original": "在新分頁開啟原文",
+    "copy_link": "複製連結",
+    "no_selection": "請從上方列表選擇文章開始閱讀"
+  },
+  "settings": {
+    "title": "系統與個人設定",
+    "general": "常規設定",
+    "retention": "資料保留天數",
+    "retention_forever": "永久保留 (0 天)",
+    "days_suffix": "天",
+    "theme": "外觀主題",
+    "theme_dark": "暗黑模式",
+    "theme_light": "明亮模式",
+    "theme_system": "跟隨系統",
+    "api_key_title": "個人中繼 / 網頁剪藏 API 金鑰",
+    "generate_key": "🎲 隨機產生金鑰",
+    "copy_key": "📋 一鍵複製",
+    "save_success": "設定儲存成功"
+  },
+  "plugins": {
+    "title": "外掛管理中心",
+    "installed": "已安裝外掛",
+    "marketplace": "外掛市集",
+    "slot_source": "來源槽 (Source)",
+    "slot_processor": "處理槽 (Processor)",
+    "slot_layout": "版型槽 (Layout)",
+    "slot_action": "動作槽 (Action)",
+    "status_active": "正常運行中",
+    "status_tripped": "⚠️ 已自動熔斷",
+    "reset_circuit": "重置熔斷狀態",
+    "author": "作者",
+    "version": "版本"
+  },
+  "auth": {
+    "login_title": "OmniRSS 登入",
+    "username": "帳號",
+    "password": "密碼",
+    "login_button": "登入系統",
+    "setup_title": "建立超級管理員帳號",
+    "invalid_credentials": "帳號或密碼錯誤"
+  }
+}
