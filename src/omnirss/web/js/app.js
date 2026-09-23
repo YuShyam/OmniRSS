@@ -335,7 +335,12 @@ class App {
 }
 
 // Bootstrap on DOM Ready
-document.addEventListener("DOMContentLoaded", () => {
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    const app = new App();
+    app.init();
+  });
+} else {
   const app = new App();
   app.init();
-});
+}

@@ -127,6 +127,7 @@ def test_security_headers() -> None:
     """測試 6 大安全標頭產出 (Test HTTP security headers)."""
     headers = get_security_headers()
     assert "Content-Security-Policy" in headers
-    assert "script-src 'none'" in headers["Content-Security-Policy"]
+    assert "script-src 'self'" in headers["Content-Security-Policy"]
+    assert "connect-src 'self'" in headers["Content-Security-Policy"]
     assert headers["X-Frame-Options"] == "DENY"
     assert headers["X-Content-Type-Options"] == "nosniff"
