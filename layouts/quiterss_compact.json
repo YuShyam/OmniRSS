@@ -1,0 +1,136 @@
+{
+  "$schema": "https://omnirss.local/schemas/layout-spec.v1.json",
+  "layout_id": "quiterss_compact",
+  "name": "QuiteRSS 經典緊湊雙欄版型",
+  "version": "1.0.0",
+  "author": "OmniRSS Core Team",
+  "description": "100% 復刻 QuiteRSS 經典人體工學：單行零折行、全欄位點擊正逆排序、[ ⊞ ] 欄位勾選器與極致高密度數據展示。",
+
+  "view_mode": "split_horizontal",
+  "density": {
+    "row_height_px": 24,
+    "font_size_px": 12,
+    "font_family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft JhengHei', sans-serif",
+    "white_space": "nowrap",
+    "text_overflow": "ellipsis"
+  },
+
+  "columns": [
+    {
+      "id": "is_read",
+      "label": "狀態",
+      "width_px": 24,
+      "min_width_px": 24,
+      "max_width_px": 24,
+      "resizable": false,
+      "sortable": true,
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "is_starred",
+      "label": "★",
+      "width_px": 28,
+      "min_width_px": 28,
+      "max_width_px": 28,
+      "resizable": false,
+      "sortable": true,
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "title",
+      "label": "標題",
+      "width_px": null,
+      "flex_grow": 1,
+      "min_width_px": 180,
+      "resizable": true,
+      "sortable": true,
+      "visible": true,
+      "locked": true
+    },
+    {
+      "id": "feed_title",
+      "label": "來源",
+      "width_px": 140,
+      "min_width_px": 80,
+      "resizable": true,
+      "sortable": true,
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "published_at",
+      "label": "發布時間",
+      "width_px": 130,
+      "min_width_px": 100,
+      "resizable": true,
+      "sortable": true,
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "author",
+      "label": "作者",
+      "width_px": 100,
+      "min_width_px": 60,
+      "resizable": true,
+      "sortable": true,
+      "visible": false,
+      "locked": false
+    },
+    {
+      "id": "tags",
+      "label": "標籤",
+      "width_px": 120,
+      "min_width_px": 80,
+      "resizable": true,
+      "sortable": true,
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "has_image",
+      "label": "圖",
+      "width_px": 28,
+      "min_width_px": 28,
+      "max_width_px": 28,
+      "resizable": false,
+      "sortable": true,
+      "visible": true,
+      "locked": false
+    }
+  ],
+
+  "splitters": {
+    "sidebar_width_px": 240,
+    "list_pane_height_percent": 45,
+    "reading_pane_height_percent": 55,
+    "min_pane_size_px": 100
+  },
+
+  "interaction": {
+    "list_update_mode": "quiet",
+    "mark_read_on_scroll": false,
+    "mark_read_on_select": true,
+    "confirm_mark_all_read": true
+  },
+
+  "keyboard_shortcuts": {
+    "next_article": ["j", "ArrowDown"],
+    "prev_article": ["k", "ArrowUp"],
+    "toggle_read": ["m"],
+    "toggle_star": ["s"],
+    "open_original_tab": ["v"],
+    "mark_category_read": ["Shift+A"],
+    "focus_search": ["/"],
+    "toggle_sidebar": ["b"]
+  },
+
+  "theme": {
+    "default_mode": "dark",
+    "custom_accent_color": "#10b981",
+    "unread_indicator_color": "#3b82f6",
+    "starred_color": "#f59e0b"
+  }
+}

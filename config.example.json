@@ -1,0 +1,52 @@
+{
+  "$schema": "https://omnirss.local/schemas/config.v1.json",
+  "_comment": "OmniRSS 伺服器基礎設施設定檔 (僅包含系統級底座配置，外掛與個人偏好均在 DB 與插件目錄獨立管理)",
+
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "secret_key": "",
+    "_secret_key_comment": "JWT 登入簽章密鑰。若為空，微核心啟動時自動透過 secrets.token_urlsafe(32) 隨機生成",
+    "timezone": "Asia/Taipei",
+    "log_level": "INFO"
+  },
+
+  "database": {
+    "path": "data/omnirss.db",
+    "wal_mode": true,
+    "busy_timeout_ms": 5000,
+    "cache_size_kb": 64000,
+    "auto_vacuum": "incremental"
+  },
+
+  "security": {
+    "allow_registration": false,
+    "_allow_registration_comment": "【全站註冊開關】false 代表私人模式 (僅管理員可在後台新增用戶)；true 代表開放任何人註冊",
+    "allow_external_ingest": true,
+    "_allow_external_ingest_comment": "【中繼/快剪總閘門】是否允許本機瀏覽器中繼與 Web Clipper 注入 (各用戶仍需攜帶個人專屬 API Key 鑑權)",
+    "rate_limit_per_minute": 120
+  },
+
+  "crawler": {
+    "default_polling_interval_minutes": 30,
+    "_default_polling_interval_comment": "【預設抓取間隔】頻道若未自訂排程時，預設每隔多少分鐘輪詢一次 (建議 30 分鐘)",
+
+    "request_timeout_seconds": 15,
+    "_request_timeout_comment": "【請求超時上限】單一 RSS 來源連線超過幾秒判定為逾時中斷 (建議 15 秒)",
+
+    "max_concurrent_workers": 25,
+    "_max_concurrent_workers_comment": "【最高並行線程數】非同步爬蟲同時抓取頻道的最大並發數 (OCI 建議設 20~30)",
+
+    "auto_referer_injection": true,
+    "_auto_referer_comment": "【自動防盜鏈注入】為每個請求自動帶上該來源根網域之 Referer (可攻克 Mobile01 等論壇 403 阻擋)",
+
+    "enable_3stage_fallback": true,
+    "_enable_3stage_fallback_comment": "【三階指紋輪替救援】遇阻擋時自動啟動『Chrome 128 ➔ HTTPS 自動升級 ➔ QuiteRSS 指紋』救援流程"
+  },
+
+  "sidecars": {
+    "flaresolverr_enabled": false,
+    "_flaresolverr_enabled_comment": "【Cloudflare 邊車開關】若設為 true，遇 Cloudflare 阻擋之特定頻道將自動派發給邊車無頭瀏覽器算題",
+    "flaresolverr_url": "http://flaresolverr:8191/v1"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
+  "id": "omnirss/gomaji-deals",
+  "name": "Gomaji 台灣美食與旅宿優惠情報來源外掛",
+  "version": "1.0.0",
+  "slot_type": "source",
+  "author": "OmniRSS Core Team",
+  "description": "自動追蹤 Gomaji 平台特定城市之美食餐廳、頂級 Bufffet 吃到飽、飯店住宿折價情報，轉化為高資訊密度 RSS 摘要。",
+  "entry_point": "plugin:GomajiDealsPlugin",
+  "minimum_omnirss_version": "1.0.0",
+  "dependencies": [
+    "beautifulsoup4>=4.12.0"
+  ],
+  "permissions": [
+    "network_access:outbound"
+  ],
+  "default_config": {
+    "city_id": 1,
+    "category_id": 2,
+    "min_discount_rate": 0.65,
+    "auto_tag": "團購特價"
+  }
+}

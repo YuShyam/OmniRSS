@@ -1,0 +1,27 @@
+# ==============================================================================
+# OmniRSS Caddy 2 Reverse Proxy Configuration with Automatic HTTPS
+# ==============================================================================
+
+# 若有自己的網域名稱，請將 :80 替換為您的網域 (例如 rss.yourdomain.com)
+:80 {
+    encode zstd gzip
+
+    # 安全防護標頭 (Security Headers)
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    # 圖片金庫強快取 (1 年不可變快取)
+    @assets path /api/assets/images/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+
+    # 反向代理至 FastAPI 後端
+    reverse_proxy app:8000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

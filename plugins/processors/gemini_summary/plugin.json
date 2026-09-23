@@ -1,0 +1,47 @@
+{
+  "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
+  "id": "omnirss/gemini-summary",
+  "name": "Gemini Flash AI 動態模型繁中重點摘要外掛",
+  "version": "1.0.0",
+  "slot_type": "processor",
+  "author": "OmniRSS Core Team",
+  "description": "基於 Google 官方 google-genai SDK 與動態模型探索機制，為長篇文章自動產出 3~5 點繁體中文結構化摘要，支援個人自備金鑰 (BYOK) 與冷庫永久快取。",
+  "entry_point": "plugin:GeminiSummaryProcessorPlugin",
+  "minimum_omnirss_version": "1.0.0",
+  "dependencies": [
+    "google-genai>=0.1.1"
+  ],
+  "permissions": [
+    "network_access:outbound",
+    "db_read:articles",
+    "db_write:archives_cold"
+  ],
+  "default_config": {
+    "api_key": "",
+    "model": "auto",
+    "target_language": "zh-TW",
+    "summary_bullets": 4,
+    "auto_summarize_on_star": true
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "api_key": {
+        "type": "string",
+        "title": "Google Gemini API Key (可於個人設定中獨立填寫自備金鑰)"
+      },
+      "model": {
+        "type": "string",
+        "default": "auto",
+        "title": "模型型號 ('auto' 代表自動探測可用 Flash 模型並啟用配額瀑布降級)"
+      },
+      "summary_bullets": {
+        "type": "integer",
+        "minimum": 2,
+        "maximum": 8,
+        "default": 4,
+        "title": "重點條列數量"
+      }
+    }
+  }
+}
