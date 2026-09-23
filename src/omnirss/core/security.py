@@ -263,6 +263,15 @@ class HTMLSanitizer:
         return text
 
     @classmethod
+    def extract_text(cls, html_text: str) -> str:
+        """提取完整純文字內容 (Extract full plain text from HTML)."""
+        return cls.extract_snippet(html_text, max_chars=10_000_000)
+
+    # 常用別名 (Convenience aliases)
+    clean_html = clean
+    generate_snippet = extract_snippet
+
+    @classmethod
     def extract_media(cls, html_text: str) -> MediaManifestDTO:
         """提取內文所有多媒體 URL 清單 (Extract all media URLs from HTML).
 
@@ -408,3 +417,7 @@ def get_security_headers() -> dict[str, str]:
         "X-XSS-Protection": "0",
         "Cross-Origin-Opener-Policy": "same-origin",
     }
+
+
+# 向前相容別名 (Backward-compatible alias)
+AntiSSRFClient = AntiSSRFGateway
