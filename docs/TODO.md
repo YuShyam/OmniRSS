@@ -64,21 +64,21 @@
 ## 📡 階段二：爬蟲引擎、過濾器與排程器 (Phase 2)
 
 ### 2.1 高韌性爬蟲引擎 (`omnirss/core/crawler_engine.py`)
-- [ ] 實作 **Auto-Referer 自動防盜鏈注入** (攻破 Mobile01 等論壇防禦)
-- [ ] 實作 **三階自適應指紋輪替狀態機** (Chrome 128 ➔ HTTPS 自動升級 ➔ QuiteRSS Qt 指紋)
-- [ ] 實作 **ETag / Last-Modified 304 零流量快取** 與 Gzip/Brotli 雙向解壓
-- [ ] 實作 **錯誤指數退避排程** (Exponential Backoff with Jitter)
-- [ ] 實作 10MB 串流讀取硬切斷 (防巨型檔案 DoS) 與 `defusedxml` 安全解析 (防 XML 炸彈)
-- [ ] 支援 **FlareSolverr 側邊欄智能路由** (針對 OCI 頑強 Cloudflare 站點)
+- [x] 實作 **Auto-Referer 自動防盜鏈注入** (攻破 Mobile01 等論壇防禦)
+- [x] 實作 **三階自適應指紋輪替狀態機** (Chrome 128 ➔ HTTPS 自動升級 ➔ QuiteRSS Qt 指紋)
+- [x] 實作 **ETag / Last-Modified 304 零流量快取** 與 Gzip/Brotli 雙向解壓
+- [x] 實作 **錯誤指數退避排程** (Exponential Backoff with Jitter)
+- [x] 實作 10MB 串流讀取硬切斷 (防巨型檔案 DoS) 與 `defusedxml` 安全解析 (防 XML 炸彈)
+- [x] 支援 **FlareSolverr 側邊欄智能路由** (針對 OCI 頑強 Cloudflare 站點)
 
 ### 2.2 智慧過濾與規則引擎 (`omnirss/core/rule_engine.py`)
-- [ ] 實作 QuiteRSS 條件比對器（支援 `AND` / `OR` 邏輯，比對標題、作者、內文、網址、正則 Regex）
-- [ ] 實作動作分發器（自動執行：`mark_read`、`trash`、`star`、`add_tag`、`notify`、`ai_summary`）
+- [x] 實作 QuiteRSS 條件比對器（支援 `AND` / `OR` 邏輯，比對標題、作者、內文、網址、正則 Regex）
+- [x] 實作動作分發器（自動執行：`mark_read`、`trash`、`star`、`add_tag`、`notify`、`ai_summary`）
 
 ### 2.3 資料便攜備份與排程器 (`omnirss/core/backup_engine.py` & `scheduler.py`)
-- [ ] 實作 OPML 2.0 雙向匯出與匯入解析器（完整保留目錄階層樹與自訂別名）
-- [ ] 實作個人設定脫敏備份與還原（自動過濾 `[REDACTED]` 機敏金鑰）
-- [ ] 實作基於 APScheduler 的非同步定時排程引擎
+- [x] 實作 OPML 2.0 雙向匯出與匯入解析器（完整保留目錄階層樹與自訂別名）
+- [x] 實作個人設定脫敏備份與還原（自動過濾 `[REDACTED]` 機敏金鑰）
+- [x] 實作基於 APScheduler 的非同步定時排程引擎
 
 ### 🔍 Phase 2 驗收標準 (Acceptance Gate)
 * **驗收指令**：`python scripts/verify_crawler.py`

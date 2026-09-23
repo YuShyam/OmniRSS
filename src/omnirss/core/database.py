@@ -373,6 +373,14 @@ class DatabaseManager:
         finally:
             await conn.close()
 
+    # 常用別名 (Convenience aliases)
+    init_db = initialize
+    get_db = get_connection
+
+    async def close(self) -> None:
+        """關閉連線池 (Close pool, no-op for transient connections)."""
+        pass
+
 
 _DB_MANAGER: Optional[DatabaseManager] = None
 
