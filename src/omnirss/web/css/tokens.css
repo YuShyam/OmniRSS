@@ -1,0 +1,159 @@
+/* ==========================================================================
+   OmniRSS Design Tokens & Themes (24px QuiteRSS High-Density Design System)
+   ========================================================================== */
+
+:root {
+  /* Layout & Density Constants */
+  --row-height: 24px;
+  --header-height: 42px;
+  --status-bar-height: 24px;
+  --tree-indent: 14px;
+  --border-radius-sm: 3px;
+  --border-radius-md: 5px;
+  --border-radius-lg: 8px;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, Monaco, monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  /* Accent Colors */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-primary-dim: rgba(59, 130, 246, 0.15);
+  --accent-orange: #f59e0b;
+  --accent-orange-dim: rgba(245, 158, 11, 0.15);
+  --accent-red: #ef4444;
+  --accent-green: #10b981;
+  --accent-purple: #8b5cf6;
+
+  /* Default Dark Theme (QuiteRSS Modern Dark) */
+  --bg-app: #121418;
+  --bg-surface: #1a1d24;
+  --bg-surface-hover: #232731;
+  --bg-surface-active: #2b313d;
+  --bg-selected-row: #1e3a5f;
+  --bg-selected-row-blur: #1a2c42;
+  --bg-header: #16181f;
+  --bg-status: #121418;
+  --bg-reader: #181b22;
+  --bg-input: #121418;
+  --bg-modal: #1e222b;
+  --bg-badge: #2c3240;
+
+  --border-color: #272c38;
+  --border-color-subtle: #1e222b;
+  --border-color-focus: #3b82f6;
+
+  --text-primary: #f1f3f7;
+  --text-secondary: #9aa2b2;
+  --text-muted: #646d7e;
+  --text-dimmed: #4a5160;
+  --text-unread: #ffffff;
+  --text-highlight: #60a5fa;
+
+  --unread-dot-color: #3b82f6;
+  --star-color: #f59e0b;
+  --star-empty-color: #4a5160;
+
+  --scrollbar-thumb: #2d3342;
+  --scrollbar-thumb-hover: #3d4558;
+  --scrollbar-track: transparent;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  --splitter-width: 4px;
+  --splitter-color: #222631;
+  --splitter-hover: #3b82f6;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --bg-app: #f4f5f8;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f0f2f6;
+  --bg-surface-active: #e4e7ee;
+  --bg-selected-row: #dbeafe;
+  --bg-selected-row-blur: #edf4fe;
+  --bg-header: #ffffff;
+  --bg-status: #f0f2f6;
+  --bg-reader: #ffffff;
+  --bg-input: #ffffff;
+  --bg-modal: #ffffff;
+  --bg-badge: #e2e8f0;
+
+  --border-color: #d1d5db;
+  --border-color-subtle: #e5e7eb;
+  --border-color-focus: #2563eb;
+
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-dimmed: #9ca3af;
+  --text-unread: #000000;
+  --text-highlight: #1d4ed8;
+
+  --unread-dot-color: #2563eb;
+  --star-color: #d97706;
+  --star-empty-color: #cbd5e1;
+
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+  --scrollbar-track: transparent;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  --splitter-color: #e5e7eb;
+  --splitter-hover: #2563eb;
+}
+
+/* Midnight Blue Theme */
+[data-theme="midnight"] {
+  --bg-app: #0b0f19;
+  --bg-surface: #111827;
+  --bg-surface-hover: #1f2937;
+  --bg-surface-active: #374151;
+  --bg-selected-row: #1e3a8a;
+  --bg-selected-row-blur: #172554;
+  --bg-header: #0f172a;
+  --bg-status: #0b0f19;
+  --bg-reader: #111827;
+  --bg-input: #0b0f19;
+  --bg-modal: #1e293b;
+  --bg-badge: #1e293b;
+
+  --border-color: #1f2937;
+  --border-color-subtle: #161e2e;
+  --border-color-focus: #60a5fa;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dimmed: #475569;
+  --text-unread: #ffffff;
+  --text-highlight: #93c5fd;
+
+  --unread-dot-color: #60a5fa;
+  --star-color: #fbbf24;
+  --star-empty-color: #475569;
+
+  --scrollbar-thumb: #1e293b;
+  --scrollbar-thumb-hover: #334155;
+  --scrollbar-track: transparent;
+
+  --splitter-color: #1e293b;
+  --splitter-hover: #60a5fa;
+}

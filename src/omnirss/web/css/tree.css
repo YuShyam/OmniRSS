@@ -1,0 +1,205 @@
+/* ==========================================================================
+   OmniRSS Subscriptions Tree Styling (Left Pane)
+   ========================================================================== */
+
+.tree-header {
+  height: 32px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color-subtle);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.tree-title {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tree-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-action-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.tree-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+/* Smart Folders Section (All, Unread, Starred, Trash) */
+.smart-folders-group {
+  border-bottom: 1px solid var(--border-color-subtle);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+.tree-item {
+  height: var(--row-height);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  position: relative;
+  transition: background-color 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-item:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.tree-item.active {
+  background-color: var(--bg-selected-row);
+  color: var(--text-unread);
+  font-weight: 500;
+}
+
+.tree-item .tree-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.tree-item.active .tree-icon {
+  color: var(--accent-primary);
+}
+
+.tree-item .tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-item .tree-count {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-badge);
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.tree-item .tree-count.has-unread {
+  background: var(--accent-primary-dim);
+  color: var(--accent-primary);
+}
+
+/* Categories & Feeds Section */
+.category-item {
+  height: var(--row-height);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: background-color 0.1s;
+}
+
+.category-item:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.category-toggle {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.category-toggle.collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.category-feeds-container {
+  padding-left: var(--tree-indent);
+}
+
+.feed-item {
+  height: var(--row-height);
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 4px;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  transition: background-color 0.1s;
+}
+
+.feed-item:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.feed-item.active {
+  background-color: var(--bg-selected-row);
+  color: var(--text-unread);
+  font-weight: 500;
+}
+
+.feed-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.feed-favicon-fallback {
+  width: 14px;
+  height: 14px;
+  background: var(--accent-orange-dim);
+  color: var(--accent-orange);
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

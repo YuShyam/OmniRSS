@@ -143,6 +143,14 @@ app.include_router(edge_router)
 app.include_router(backup_router)
 app.include_router(assets_router)
 
+# 掛載前端靜態資源與 SPA 介面 (Mount QuiteRSS 24px Web UI)
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+web_dir = Path(__file__).resolve().parent / "web"
+if web_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
+
 
 if __name__ == "__main__":
     uvicorn.run("omnirss.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,0 +1,197 @@
+/* ==========================================================================
+   OmniRSS 24px High-Density Article List Styling (Center Pane)
+   ========================================================================== */
+
+.list-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Quiet Mode Active Notice Banner */
+.quiet-mode-banner {
+  display: none;
+  background: var(--accent-purple);
+  color: #ffffff;
+  font-size: var(--font-size-xs);
+  padding: 3px 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.quiet-mode-banner.active {
+  display: flex;
+}
+
+/* 24px Table Header Bar */
+.list-header-row {
+  height: var(--row-height);
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.col-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-right: 1px solid var(--border-color-subtle);
+}
+
+.col-cell:last-child {
+  border-right: none;
+}
+
+.col-header {
+  cursor: pointer;
+  transition: color 0.1s;
+}
+
+.col-header:hover {
+  color: var(--text-primary);
+}
+
+.col-header .sort-icon {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* Column Standard Widths */
+.col-status { width: 26px; min-width: 26px; justify-content: center; padding: 0; }
+.col-star { width: 26px; min-width: 26px; justify-content: center; padding: 0; }
+.col-title { flex: 1; min-width: 180px; }
+.col-feed { width: 140px; min-width: 90px; }
+.col-date { width: 120px; min-width: 80px; }
+.col-author { width: 100px; min-width: 70px; }
+.col-tags { width: 100px; min-width: 60px; }
+.col-picker-trigger {
+  width: 24px;
+  min-width: 24px;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+.col-picker-trigger:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-active);
+}
+
+/* 24px Scrollable Rows Body */
+.list-rows-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.article-row {
+  height: var(--row-height);
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color-subtle);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.05s;
+}
+
+.article-row:hover {
+  background-color: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.article-row.selected {
+  background-color: var(--bg-selected-row);
+  color: #ffffff;
+}
+
+.article-row.selected .text-muted,
+.article-row.selected .feed-name {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.article-row.unread {
+  font-weight: 600;
+  color: var(--text-unread);
+}
+
+/* Status & Star Indicators */
+.unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--unread-dot-color);
+  display: inline-block;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--star-empty-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  transition: transform 0.1s ease, color 0.1s ease;
+}
+
+.star-btn:hover {
+  transform: scale(1.15);
+  color: var(--star-color);
+}
+
+.star-btn.starred {
+  color: var(--star-color);
+}
+
+.tag-badge-sm {
+  font-size: 10px;
+  background: var(--bg-badge);
+  color: var(--text-muted);
+  padding: 0 4px;
+  border-radius: 2px;
+  margin-right: 3px;
+  display: inline-block;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  padding: 20px;
+  text-align: center;
+}
+
+.empty-state svg {
+  width: 32px;
+  height: 32px;
+  color: var(--text-dimmed);
+}
