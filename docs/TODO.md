@@ -94,19 +94,19 @@
 ## 🔌 階段三：RESTful API 路由與 Swagger 互動驗收 (Phase 3)
 
 ### 3.1 認證、依賴與錯誤處理 (`omnirss/api/`)
-- [ ] `dependencies.py`：JWT 登入認證、`X-API-Key` 鑑權（常數時間比對 `hmac.compare_digest`）、Rate Limiter（5 次失敗鎖定 15 分鐘）
-- [ ] `schemas.py`：嚴格對齊 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) 的 Pydantic v2 DTO
-- [ ] 實作 RFC 7807 錯誤處理中介軟體
+- [x] `dependencies.py`：JWT 登入認證、`X-API-Key` 鑑權（常數時間比對 `hmac.compare_digest`）、Rate Limiter（5 次失敗鎖定 15 分鐘）
+- [x] `schemas.py`：嚴格對齊 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) 的 Pydantic v2 DTO
+- [x] 實作 RFC 7807 錯誤處理中介軟體
 
 ### 3.2 領域路由模組分拆 (`omnirss/api/routers/`)
-- [ ] `auth_router.py`：`/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
-- [ ] `feeds_router.py`：`/api/feeds`, `/api/categories`, `/api/feeds/{id}/refresh`
-- [ ] `articles_router.py`：`/api/articles` (分頁/搜尋/排序), `/api/articles/{id}` (已讀/星標/標籤)
-- [ ] `rules_router.py`：`/api/rules` (過濾規則 CRUD 與優先權排序)
-- [ ] `plugins_router.py`：`/api/plugins` (外掛清單、開關、配置與遙測)
-- [ ] `edge_router.py`：`/api/feeds/edge-tasks` (個人頻道隔離), `/api/feeds/{id}/ingest`, `/api/articles/push` (Web Clipper 接收)
-- [ ] `backup_router.py`：`/api/opml/export`, `/api/opml/import`, `/api/user/backup`, `/api/user/restore`
-- [ ] `omnirss/main.py`：Lifespan 啟動健檢 (`PRAGMA quick_check`) 與關機 WAL 刷盤 (`PRAGMA wal_checkpoint(TRUNCATE)`)
+- [x] `auth_router.py`：`/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
+- [x] `feeds_router.py`：`/api/feeds`, `/api/categories`, `/api/feeds/{id}/refresh`
+- [x] `articles_router.py`：`/api/articles` (分頁/搜尋/排序), `/api/articles/{id}` (已讀/星標/標籤)
+- [x] `rules_router.py`：`/api/rules` (過濾規則 CRUD 與優先權排序)
+- [x] `plugins_router.py`：`/api/plugins` (外掛清單、開關、配置與遙測)
+- [x] `edge_router.py`：`/api/feeds/edge-tasks` (個人頻道隔離), `/api/feeds/{id}/ingest`, `/api/articles/push` (Web Clipper 接收)
+- [x] `backup_router.py`：`/api/opml/export`, `/api/opml/import`, `/api/user/backup`, `/api/user/restore`
+- [x] `omnirss/main.py`：Lifespan 啟動健檢 (`PRAGMA quick_check`) 與關機 WAL 刷盤 (`PRAGMA wal_checkpoint(TRUNCATE)`)
 
 ### 🔍 Phase 3 驗收標準 (Acceptance Gate)
 * **驗收指令**：啟動 `python -m omnirss.main` 並在瀏覽器開啟 `http://localhost:8000/docs`
@@ -122,24 +122,24 @@
 ## 🎨 階段四：QuiteRSS 24px 經典前端與 PWA (Phase 4)
 
 ### 4.1 核心介面與零件化 CSS (`omnirss/web/`)
-- [ ] `index.html`：現代語意化結構，載入 Google Fonts、PWA Meta
-- [ ] `css/tokens.css`：24px 行高密度、QuiteRSS 暗黑與自訂主題色彩變數
-- [ ] `css/layout.css`：CSS Grid 三欄佈局與滑鼠/觸控多軸 Splitter 拖曳
-- [ ] `css/list.css`：單行零折行 (`nowrap` + `ellipsis`)、[ ⊞ ] 欄位自選彈窗、寧靜模式浮動通知
-- [ ] `css/reader.css`：文章排版美化、影音 Responsive Embed 播放器、AI 摘要抽屜
+- [x] `index.html`：現代語意化結構，載入 Google Fonts、PWA Meta
+- [x] `css/tokens.css`：24px 行高密度、QuiteRSS 暗黑與自訂主題色彩變數
+- [x] `css/layout.css`：CSS Grid 三欄佈局與滑鼠/觸控多軸 Splitter 拖曳
+- [x] `css/list.css`：單行零折行 (`nowrap` + `ellipsis`)、[ ⊞ ] 欄位自選彈窗、寧靜模式浮動通知
+- [x] `css/reader.css`：文章排版美化、影音 Responsive Embed 播放器、AI 摘要抽屜
 
 ### 4.2 模組化 ES6 元件 (`omnirss/web/js/`)
-- [ ] `app.js` & `state.js`：應用程式啟動與響應式狀態管理
-- [ ] `api_client.js`：封裝 Fetch API、Token 自動附加與錯誤攔截
-- [ ] `i18n.js`：無重載即時多國語系切換 (zh-TW / en-US)
-- [ ] `keybindings.js`：全套 QuiteRSS / Vim 鍵盤流監聽器 (`j`/`k`, `v`, `m`, `s`, `Shift+A`, `/`, `b`)
-- [ ] `components/`：
-  - [ ] `tree_view.js`：分類目錄樹展開折疊、未讀計數平滑更新
-  - [ ] `list_view.js`：24px 虛擬滾動列表、全欄位點擊排序、寧靜模式 (Quiet Mode)
-  - [ ] `reader_view.js`：脫毒內容呈現、影音播放、外鏈在新分頁開啟
-  - [ ] `column_picker.js`：`[ ⊞ ]` 動態欄位顯示/隱藏與寬度記憶
-  - [ ] `rule_modal.js`：條件過濾器視覺化設定面板
-- [ ] `manifest.webmanifest` & `sw.js`：PWA 離線靜態快取與手機端自適應
+- [x] `app.js` & `state.js`：應用程式啟動與響應式狀態管理
+- [x] `api_client.js`：封裝 Fetch API、Token 自動附加與錯誤攔截
+- [x] `i18n.js`：無重載即時多國語系切換 (zh-TW / en-US)
+- [x] `keybindings.js`：全套 QuiteRSS / Vim 鍵盤流監聽器 (`j`/`k`, `v`, `m`, `s`, `Shift+A`, `/`, `b`)
+- [x] `components/`：
+  - [x] `tree_view.js`：分類目錄樹展開折疊、未讀計數平滑更新
+  - [x] `list_view.js`：24px 虛擬滾動列表、全欄位點擊排序、寧靜模式 (Quiet Mode)
+  - [x] `reader_view.js`：脫毒內容呈現、影音播放、外鏈在新分頁開啟
+  - [x] `column_picker.js`：`[ ⊞ ]` 動態欄位顯示/隱藏與寬度記憶
+  - [x] `rule_modal.js`：條件過濾器視覺化設定面板
+- [x] `manifest.webmanifest` & `sw.js`：PWA 離線靜態快取與手機端自適應
 
 ### 🔍 Phase 4 驗收標準 (Acceptance Gate)
 * **驗收指令**：在瀏覽器打開 `http://localhost:8000/`
