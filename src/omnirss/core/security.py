@@ -13,7 +13,7 @@ import secrets
 import socket
 from typing import Any, Optional
 import urllib.parse
-from argon2 import PasswordHasher
+from argon2 import PasswordHasher as Argon2PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 import jwt
 from loguru import logger
@@ -303,7 +303,7 @@ class PasswordHasherTool:
     """Argon2id 密碼雜湊與驗證工具 (Argon2id Password Security Tool)."""
 
     def __init__(self) -> None:
-        self._hasher = PasswordHasher(
+        self._hasher = Argon2PasswordHasher(
             time_cost=2,
             memory_cost=65536,
             parallelism=2,
@@ -332,6 +332,33 @@ class PasswordHasherTool:
             return False
         except Exception:
             return False
+
+
+class PasswordSecurity:
+    """Argon2id 靜態密碼雜湊與驗證工具 (Argon2id Static Password Security Tool)."""
+
+    _instance: Optional[PasswordHasherTool] = None
+
+    @classmethod
+    def _get_hasher(cls) -> PasswordHasherTool:
+        if cls._instance is None:
+            cls._instance = PasswordHasherTool()
+        return cls._instance
+
+    @classmethod
+    def hash_password(cls, password: str) -> str:
+        """生成密碼雜湊 (Hash password)."""
+        return cls._get_hasher().hash_password(password)
+
+    @classmethod
+    def verify_password(cls, password_hash: str, password: str) -> bool:
+        """驗證密碼雜湊 (Verify password)."""
+        return cls._get_hasher().verify_password(password_hash, password)
+
+
+# 向前相容別名 (Backward-compatible aliases)
+PasswordHasher = PasswordSecurity
+PasswordHasherSecurity = PasswordSecurity
 
 
 class TokenManager:
@@ -394,6 +421,35 @@ class TokenManager:
         except jwt.PyJWTError as e:
             logger.debug(f"JWT verification error: {e}")
             return None
+
+    @classmethod
+    def create_access_token(
+        cls,
+        data: dict[str, Any],
+        secret_key: Optional[str] = None,
+        expires_delta: Optional[timedelta] = None,
+    ) -> str:
+        """建立 Access Token (Create access token with auto secret resolution)."""
+        key = secret_key
+        if key is None:
+            from omnirss.core.config import get_settings
+            cfg = get_settings()
+            key = getattr(cfg.security, "jwt_secret", None) or cfg.server.secret_key
+        return cls.create_jwt_token(data, key, expires_delta)
+
+    @classmethod
+    def decode_token(
+        cls,
+        token: str,
+        secret_key: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """解碼 Access Token (Decode access token with auto secret resolution)."""
+        key = secret_key
+        if key is None:
+            from omnirss.core.config import get_settings
+            cfg = get_settings()
+            key = getattr(cfg.security, "jwt_secret", None) or cfg.server.secret_key
+        return cls.decode_jwt_token(token, key)
 
 
 def get_security_headers() -> dict[str, str]:

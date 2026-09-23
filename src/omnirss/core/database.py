@@ -395,3 +395,9 @@ def get_db_manager(db_path: Optional[Union[str, Path]] = None) -> DatabaseManage
     if _DB_MANAGER is None or db_path is not None:
         _DB_MANAGER = DatabaseManager(db_path)
     return _DB_MANAGER
+
+
+def set_global_db_manager(db_manager: DatabaseManager) -> None:
+    """設定全域資料庫管理器單例 (Set global singleton database manager)."""
+    global _DB_MANAGER
+    _DB_MANAGER = db_manager

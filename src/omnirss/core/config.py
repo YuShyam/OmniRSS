@@ -40,6 +40,7 @@ class SecurityConfig(BaseModel):
     allow_external_ingest: bool = True
     rate_limit_per_minute: int = 120
     global_max_plugin_timeout_sec: int = 45
+    jwt_secret: Optional[str] = None
 
 
 class CrawlerConfig(BaseModel):

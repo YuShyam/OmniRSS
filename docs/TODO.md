@@ -1,7 +1,7 @@
 # OmniRSS 施工任務清單與漸進式驗收藍圖 (Execution Checklist & Milestones)
 
 > **專案名稱**：OmniRSS  
-> **當前狀態**：Phase 1 完成 (微核心底座、Plugin SDK、SQLite WAL 與安全網關 100% 綠燈驗收) ➔ 準備進入 Phase 2  
+> **當前狀態**：Phase 3 完成 (FastAPI RESTful 路由、JWT/金鑰鑑權、RFC 7807 錯誤處理 100% 綠燈驗收) ➔ 進入 Phase 4 (QuiteRSS 24px 經典前端與 PWA)  
 > **規格書文件路徑**：`docs/TODO.md`
 
 ---
