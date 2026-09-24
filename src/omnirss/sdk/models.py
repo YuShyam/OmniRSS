@@ -7,7 +7,7 @@ exchanged across the OmniRSS microkernel and plugin boundaries.
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class PluginType(str, Enum):
@@ -30,7 +30,9 @@ class ArticleDTO(BaseModel):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    guid: str = Field(description="文章原始唯一識別碼 (Original unique GUID)")
+    guid: str = Field(
+        default="", description="文章原始唯一識別碼 (Original unique GUID)"
+    )
     url: str = Field(description="文章原文連結 (Original article URL)")
     title: str = Field(description="文章標題 (Article title)")
     author: Optional[str] = Field(default=None, description="作者名稱 (Author name)")
@@ -58,12 +60,24 @@ class ArticleDTO(BaseModel):
         default=None, description="AI 產出之條列摘要 (AI-generated summary)"
     )
     extra_tags: list[str] = Field(
-        default_factory=list, description="附加標籤清單 (Additional tag names)"
+        default_factory=list,
+        validation_alias=AliasChoices("extra_tags", "custom_tags"),
+        description="附加標籤清單 (Additional tag names)",
     )
 
     # 狀態標記 (State flags)
     is_starred: bool = Field(default=False, description="是否加星收藏 (Starred flag)")
     is_read: bool = Field(default=False, description="是否已讀 (Read flag)")
+
+    @property
+    def custom_tags(self) -> list[str]:
+        """相容標籤清單屬性 (Compatible custom tags property)."""
+        return self.extra_tags
+
+    @custom_tags.setter
+    def custom_tags(self, value: list[str]) -> None:
+        """設定相容標籤清單 (Set compatible custom tags)."""
+        self.extra_tags = value
 
 
 class FeedDTO(BaseModel):

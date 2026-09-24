@@ -6,7 +6,7 @@ Source, Processor, Layout, and Action plugins.
 
 from abc import ABC, abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
-from omnirss.sdk.models import ArticleDTO, PluginManifest
+from omnirss.sdk.models import ArticleDTO, PluginManifest, PluginType
 
 if TYPE_CHECKING:
     from omnirss.sdk.context import PluginContext
@@ -21,7 +21,7 @@ class BasePlugin(ABC):
     def __init__(
         self,
         plugin_id: str,
-        manifest: PluginManifest,
+        manifest: Optional[PluginManifest] = None,
         config: Optional[dict[str, Any]] = None,
     ) -> None:
         """初始化外掛 (Initialize plugin instance).
@@ -31,8 +31,14 @@ class BasePlugin(ABC):
         :param config: 生效之設定字典 (Merged effective configuration)
         """
         self.plugin_id = plugin_id
-        self.manifest = manifest
+        self.manifest = manifest or PluginManifest(
+            id=plugin_id,
+            name=plugin_id,
+            slot_type=PluginType.PROCESSOR,
+            entry_point="",
+        )
         self.config = config or {}
+        self.context: Optional["PluginContext"] = None
 
     def update_config(self, new_config: dict[str, Any]) -> None:
         """更新外掛執行時設定 (Update active runtime configuration).
@@ -50,7 +56,7 @@ class BaseSourcePlugin(BasePlugin):
 
     @abstractmethod
     async def fetch(
-        self, feed_url: str, context: "PluginContext"
+        self, feed_url: str, context: Optional["PluginContext"] = None
     ) -> list[ArticleDTO]:
         """執行來源資料擷取 (Fetch and parse articles from external source).
 
@@ -69,7 +75,7 @@ class BaseProcessorPlugin(BasePlugin):
 
     @abstractmethod
     async def process(
-        self, article: ArticleDTO, context: "PluginContext"
+        self, article: ArticleDTO, context: Optional["PluginContext"] = None
     ) -> Optional[ArticleDTO]:
         """執行單篇文章加工處理 (Process, enrich, or filter a single article).
 
@@ -88,7 +94,7 @@ class BaseActionPlugin(BasePlugin):
 
     @abstractmethod
     async def on_article_starred(
-        self, article: ArticleDTO, context: "PluginContext"
+        self, article: ArticleDTO, context: Optional["PluginContext"] = None
     ) -> bool:
         """文章被加星收藏時觸發 (Triggered when an article is starred).
 
@@ -100,7 +106,10 @@ class BaseActionPlugin(BasePlugin):
 
     @abstractmethod
     async def on_article_tagged(
-        self, article: ArticleDTO, tag_name: str, context: "PluginContext"
+        self,
+        article: ArticleDTO,
+        tag_name: str,
+        context: Optional["PluginContext"] = None,
     ) -> bool:
         """文章被貼上標籤時觸發 (Triggered when an article is tagged).
 

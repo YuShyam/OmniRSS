@@ -34,6 +34,11 @@ class PluginContext:
         self._http_client = http_client
         self.logger = logger.bind(plugin_id=plugin_id, user_id=user_id)
 
+    @property
+    def http_client(self) -> Optional[Any]:
+        """注入之安全 HTTP 客戶端 (Injected Anti-SSRF HTTP client)."""
+        return self._http_client
+
     def get_config(self, key: str, default: Any = None) -> Any:
         """獲取指定設定鍵值 (Retrieve a specific configuration key).
 

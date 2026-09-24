@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "OmniRSS Web Clipper & Edge Relay",
+  "version": "1.0.0",
+  "description": "一鍵剪藏網頁至 OmniRSS 私有微核心閱讀器，並支援 OCI 受阻頻道之本機邊緣中繼 (Edge Relay)。",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "contextMenus",
+    "alarms",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "OmniRSS Web Clipper"
+  },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_scripts/extractor.js"
+      ]
+    }
+  ]
+}

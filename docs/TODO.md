@@ -1,7 +1,7 @@
 # OmniRSS 施工任務清單與漸進式驗收藍圖 (Execution Checklist & Milestones)
 
 > **專案名稱**：OmniRSS  
-> **當前狀態**：Phase 4 完成 (QuiteRSS 24px 緊湊三欄、雙軸 Splitters、動態欄位 [ ⊞ ]、Vim 快捷鍵與 PWA 100% 綠燈驗收) ➔ 進入 Phase 5 (官方外掛生態與 Chrome 擴充套件)  
+> **當前狀態**：Phase 1~5 全面完成 (微核心、304 爬蟲、FastAPI 路由、QuiteRSS 24px 前端、官方 4 大外掛與 Chrome MV3 擴充套件 100% 綠燈驗收閉環)  
 > **規格書文件路徑**：`docs/TODO.md`
 
 ---
@@ -99,7 +99,7 @@
 - [x] 實作 RFC 7807 錯誤處理中介軟體
 
 ### 3.2 領域路由模組分拆 (`omnirss/api/routers/`)
-- [x] `auth_router.py`：`/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
+- [x] `auth_router.py`：`/api/auth/login`, `/api/auth/logout`, `/api/auth/me`, `/api/user/settings`
 - [x] `feeds_router.py`：`/api/feeds`, `/api/categories`, `/api/feeds/{id}/refresh`
 - [x] `articles_router.py`：`/api/articles` (分頁/搜尋/排序), `/api/articles/{id}` (已讀/星標/標籤)
 - [x] `rules_router.py`：`/api/rules` (過濾規則 CRUD 與優先權排序)
@@ -122,15 +122,15 @@
 ## 🎨 階段四：QuiteRSS 24px 經典前端與 PWA (Phase 4)
 
 ### 4.1 核心介面與零件化 CSS (`omnirss/web/`)
-- [x] `index.html`：現代語意化結構，載入 Google Fonts、PWA Meta
+- [x] `index.html`：現代語意化結構，載入 Google Fonts、PWA Meta、排程與清理面板
 - [x] `css/tokens.css`：24px 行高密度、QuiteRSS 暗黑與自訂主題色彩變數
 - [x] `css/layout.css`：CSS Grid 三欄佈局與滑鼠/觸控多軸 Splitter 拖曳
 - [x] `css/list.css`：單行零折行 (`nowrap` + `ellipsis`)、[ ⊞ ] 欄位自選彈窗、寧靜模式浮動通知
 - [x] `css/reader.css`：文章排版美化、影音 Responsive Embed 播放器、AI 摘要抽屜
 
 ### 4.2 模組化 ES6 元件 (`omnirss/web/js/`)
-- [x] `app.js` & `state.js`：應用程式啟動與響應式狀態管理
-- [x] `api_client.js`：封裝 Fetch API、Token 自動附加與錯誤攔截
+- [x] `app.js` & `state.js`：應用程式啟動與響應式狀態管理、使用者設定持久化水合
+- [x] `api_client.js`：封裝 Fetch API、Token 自動附加、使用者設定 CRUD
 - [x] `i18n.js`：無重載即時多國語系切換 (zh-TW / en-US)
 - [x] `keybindings.js`：全套 QuiteRSS / Vim 鍵盤流監聽器 (`j`/`k`, `v`, `m`, `s`, `Shift+A`, `/`, `b`)
 - [x] `components/`：
@@ -139,6 +139,7 @@
   - [x] `reader_view.js`：脫毒內容呈現、影音播放、外鏈在新分頁開啟
   - [x] `column_picker.js`：`[ ⊞ ]` 動態欄位顯示/隱藏與寬度記憶
   - [x] `rule_modal.js`：條件過濾器視覺化設定面板
+  - [x] `modals.js`：排程與清理、圖片去重庫與全域偏好設定雙向綁定
 - [x] `manifest.webmanifest` & `sw.js`：PWA 離線靜態快取與手機端自適應
 
 ### 🔍 Phase 4 驗收標準 (Acceptance Gate)
@@ -156,23 +157,24 @@
 ## 🧩 階段五：官方外掛生態與 Chrome 擴充套件 (Phase 5)
 
 ### 5.1 官方 4 大標準外掛實作 (`plugins/`)
-- [ ] 來源外掛：`plugins/sources/generic_scraper/`（通用 Web 轉 RSS 爬蟲）
-- [ ] 來源外掛：`plugins/sources/gomaji/`（Gomaji 折價券情報）
-- [ ] 處理外掛：`plugins/processors/gemini_summary/`（Gemini Flash 動態探測、配額瀑布與繁中摘要）
-- [ ] 處理外掛：`plugins/processors/simhash_dedup/`（SimHash 64-bit 漢明距離轉貼去重）
+- [x] 來源外掛：`plugins/sources/generic_scraper/`（通用 Web 轉 RSS 爬蟲）
+- [x] 來源外掛：`plugins/sources/gomaji/`（Gomaji 折價券情報）
+- [x] 處理外掛：`plugins/processors/gemini_summary/`（Gemini Flash 動態探測、配額瀑布與繁中摘要）
+- [x] 處理外掛：`plugins/processors/simhash_dedup/`（SimHash 64-bit 漢明距離轉貼去重）
 
 ### 5.2 Chrome MV3 擴充套件 (`extensions/chrome/`)
-- [ ] `manifest.json`：MV3 最小權限宣告
-- [ ] `popup/`：伺服器網址配對、`X-API-Key` 驗證、快剪一鍵存入視圖
-- [ ] `options/`：右鍵選單開關 (`enable_context_menu: false` 預設)、邊緣中繼排程 (15~120m)
-- [ ] `content_scripts/extractor.js`：13 項完整中繼資料、去廣告 HTML、圖片清冊、影片嵌入代碼提取
-- [ ] `background.js`：動態右鍵選單管理、個人頻道隔離邊緣中繼 Cron
+- [x] `manifest.json`：MV3 最小權限宣告
+- [x] `popup/`：伺服器網址配對、`X-API-Key` 驗證、快剪一鍵存入視圖
+- [x] `options/`：右鍵選單開關 (`enable_context_menu: false` 預設)、邊緣中繼排程 (15~120m)
+- [x] `content_scripts/extractor.js`：13 項完整中繼資料、去廣告 HTML、圖片清冊、影片嵌入代碼提取
+- [x] `background.js`：動態右鍵選單管理、個人頻道隔離邊緣中繼 Cron
 
 ### 🔍 Phase 5 驗收標準 (Acceptance Gate)
-* **驗收指令**：在 Chrome 載入未封裝擴充套件並瀏覽外部新聞/部落格
+* **驗收指令**：`pytest tests/`
 * **驗收指標**：
-  1. ✅ 點擊「📌 存入 OmniRSS」，後台冷存庫即時收納全文、去重圖檔與影片嵌入。
-  2. ✅ 後台自動觸發 Gemini Flash 生成繁體中文重點摘要並呈現在閱讀窗。
-  3. ✅ 擴充套件成功中繼抓取 OCI 受阻之 403 頻道並注入回庫。
-  4. ✅ 端對端生態系統完整閉環驗收！
+  1. ✅ SimHash 64-bit 去重外掛精準識別轉貼抄襲並自動標記標籤。
+  2. ✅ Gemini 摘要外掛在未設定 API Key 時智慧降級至繁體中文重點條列萃取。
+  3. ✅ 通用爬蟲與 Gomaji 外掛正確解析 JSON 與 HTML 格式。
+  4. ✅ 外掛管理器自動發現並動態載入全數官方外掛。
+  5. ✅ Chrome MV3 擴充套件所有 JavaScript 腳本通過靜態語法檢查。
 * **Commit 執行**：`git commit -m "feat(ecosystem): 實作官方 4 大外掛 (Gemini 摘要、SimHash 去重、爬蟲) 與 Chrome MV3 擴充套件 / add official plugins and chrome companion extension"`

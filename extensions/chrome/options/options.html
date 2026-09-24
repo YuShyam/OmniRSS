@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniRSS 擴充套件設定</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-surface: #1e293b;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-primary: #3b82f6;
+      --accent-green: #10b981;
+    }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 520px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 24px;
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--text-main);
+      font-weight: 500;
+    }
+    input[type="text"], select {
+      width: 100%;
+      padding: 8px 12px;
+      background: #090d16;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .help-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .btn {
+      background: var(--accent-primary);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .status-msg {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      text-align: center;
+      display: none;
+    }
+    .status-msg.success {
+      display: block;
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent-green);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ OmniRSS 擴充套件連線設定</h1>
+
+    <div class="form-group">
+      <label for="server-url">OmniRSS 伺服器網址 (Server Base URL)</label>
+      <input type="text" id="server-url" placeholder="http://localhost:8000" />
+      <div class="help-text">請輸入您的 OmniRSS 私有微核心後端位址。</div>
+    </div>
+
+    <div class="form-group">
+      <label for="api-key">專屬 API Key (X-API-Key 鑑權金鑰)</label>
+      <input type="text" id="api-key" placeholder="貼上 OmniRSS 設定中心產生的 64-bit API Key" />
+      <div class="help-text">可於 OmniRSS Web UI「系統偏好設定 ➔ API 金鑰」複製。</div>
+    </div>
+
+    <div class="form-group">
+      <label for="relay-interval">邊緣中繼 (Edge Relay) 背景排程週期</label>
+      <select id="relay-interval">
+        <option value="15">每 15 分鐘</option>
+        <option value="30" selected>每 30 分鐘 (推薦)</option>
+        <option value="60">每 1 小時</option>
+        <option value="120">每 2 小時</option>
+      </select>
+      <div class="help-text">在背景利用本機瀏覽器連線自動中繼抓取 OCI 受阻之 403 RSS 頻道。</div>
+    </div>
+
+    <button class="btn" id="btn-save">儲存設定</button>
+    <div class="status-msg" id="status-msg"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
