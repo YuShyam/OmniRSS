@@ -292,10 +292,10 @@ async def subscribe_feed(
 
         c_cur = await conn.execute(
             """
-            INSERT INTO feeds (title, feed_url, site_url, check_interval_minutes, next_check_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
+            INSERT INTO feeds (title, feed_url, site_url, check_interval_minutes, next_check_at, requires_flaresolverr)
+            VALUES (?, ?, ?, ?, datetime('now'), ?)
             """,
-            (feed_title, req.feed_url, site_url, req.check_interval_minutes),
+            (feed_title, req.feed_url, site_url, req.check_interval_minutes, 1 if req.requires_flaresolverr else 0),
         )
         feed_id = c_cur.lastrowid
 
@@ -347,15 +347,21 @@ async def update_feed(
             (req.custom_title, req.category_id, req.custom_retention_days, user_id, feed_id),
         )
 
-    if req.check_interval_minutes is not None or req.is_paused is not None:
+    if req.check_interval_minutes is not None or req.is_paused is not None or req.requires_flaresolverr is not None:
         await conn.execute(
             """
             UPDATE feeds
             SET check_interval_minutes = COALESCE(?, check_interval_minutes),
-                is_paused = COALESCE(?, is_paused)
+                is_paused = COALESCE(?, is_paused),
+                requires_flaresolverr = COALESCE(?, requires_flaresolverr)
             WHERE id = ?
             """,
-            (req.check_interval_minutes, 1 if req.is_paused else 0 if req.is_paused is not None else None, feed_id),
+            (
+                req.check_interval_minutes,
+                1 if req.is_paused else 0 if req.is_paused is not None else None,
+                1 if req.requires_flaresolverr else 0 if req.requires_flaresolverr is not None else None,
+                feed_id,
+            ),
         )
 
     await conn.commit()

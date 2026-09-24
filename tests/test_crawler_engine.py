@@ -107,3 +107,45 @@ def test_parse_atom_feed():
     assert art.title == "SQLite WAL Mode Scaling Guide"
     assert art.guid == "tag:atom.example.com,2026:sqlite-wal"
     assert "WAL mode enables" in art.content_text
+
+
+def test_extract_full_text_from_html():
+    """測試 Trafilatura HTML 內文萃取 (Test Trafilatura full text extraction)."""
+    html = """
+    <html>
+      <head><title>Test Article</title></head>
+      <body>
+        <nav><a href="/">Home</a></nav>
+        <main>
+          <h1>Real Deep Article</h1>
+          <p>This is the essential paragraph containing vital information.</p>
+        </main>
+        <footer>Copyright 2026</footer>
+      </body>
+    </html>
+    """
+    text = CrawlerEngine.extract_full_text_from_html(html, "https://example.com/article")
+    assert text is not None
+    assert "essential paragraph" in text
+
+
+def test_raw_image_url_conversion():
+    """測試純圖片網址轉為 img 標籤 (Test bare image URL conversion)."""
+    crawler = CrawlerEngine()
+    feed_with_image = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>Photo Feed</title>
+        <link>https://photo.example.com</link>
+        <item>
+          <title>Sunset Photo</title>
+          <link>https://photo.example.com/sunset</link>
+          <guid>photo-1</guid>
+          <description>https://photo.example.com/images/sunset.jpg</description>
+        </item>
+      </channel>
+    </rss>
+    """
+    articles, _ = crawler.parse_feed_content(feed_with_image, "https://photo.example.com/rss")
+    assert len(articles) == 1
+    assert "<img src=\"https://photo.example.com/images/sunset.jpg\"" in articles[0].content_html

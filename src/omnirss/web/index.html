@@ -215,6 +215,13 @@
             <label class="form-label" for="input-feed-title">自訂別名 (選填)</label>
             <input type="text" class="form-input" id="input-feed-title" placeholder="若為空將自動讀取 RSS 頻道名稱" />
           </div>
+          <div class="form-group">
+            <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="checkbox-feed-flaresolverr" style="accent-color: var(--accent-primary);" />
+              <span>啟用 FlareSolverr 側邊欄繞過 Cloudflare 5秒盾</span>
+            </label>
+            <div class="form-help">若該站點有 Cloudflare 403 阻擋，自動調度 8191 側邊欄代理連線。</div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-modal-cancel">取消</button>

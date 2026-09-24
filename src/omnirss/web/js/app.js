@@ -449,8 +449,27 @@ class App {
       store.set("categories", cats || []);
       store.set("feeds", feeds || []);
       this.updateMarkReadScopeLabel();
+      this.updateStatusBar();
     } catch (err) {
       console.warn("Sync feeds error:", err);
+      const connTextEl = document.getElementById("status-conn-text");
+      if (connTextEl) connTextEl.textContent = "連線異常，重試中...";
+    }
+  }
+
+  updateStatusBar() {
+    const connTextEl = document.getElementById("status-conn-text");
+    const indicatorEl = document.getElementById("status-indicator");
+    if (!connTextEl) return;
+
+    const feeds = store.get("feeds") || [];
+    const totalFeeds = feeds.length;
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    connTextEl.textContent = `連線就緒 • 總計 ${totalFeeds} 個頻道 • ${timeStr}`;
+    if (indicatorEl) {
+      indicatorEl.style.backgroundColor = "var(--accent-green, #4ade80)";
     }
   }
 

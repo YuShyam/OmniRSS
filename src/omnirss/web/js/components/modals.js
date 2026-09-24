@@ -74,11 +74,12 @@ export class ModalController {
       const url = document.getElementById("input-feed-url").value.trim();
       const catId = document.getElementById("select-feed-category").value || null;
       const customTitle = document.getElementById("input-feed-title").value.trim() || null;
+      const requiresFlareSolverr = Boolean(document.getElementById("checkbox-feed-flaresolverr")?.checked);
 
       if (!url) return;
 
       try {
-        await api.addFeed(url, catId ? parseInt(catId, 10) : null, customTitle);
+        await api.addFeed(url, catId ? parseInt(catId, 10) : null, customTitle, requiresFlareSolverr);
         form.reset();
         this.closeModal("modal-add-feed");
         window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "訂閱源新增成功", type: "success" } }));

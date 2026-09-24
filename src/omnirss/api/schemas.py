@@ -100,6 +100,7 @@ class FeedCreateRequest(BaseModel):
     category_id: Optional[int] = Field(default=None, description="所屬分類 ID")
     check_interval_minutes: int = Field(default=30, ge=5, le=1440, description="抓取間隔分鐘數")
     custom_retention_days: Optional[int] = Field(default=None, ge=0, description="自訂保留天數")
+    requires_flaresolverr: bool = Field(default=False, description="是否強制調度 FlareSolverr 繞過 Cloudflare")
 
 
 class FeedUpdateRequest(BaseModel):
@@ -110,6 +111,8 @@ class FeedUpdateRequest(BaseModel):
     check_interval_minutes: Optional[int] = Field(default=None, ge=5, le=1440)
     custom_retention_days: Optional[int] = None
     is_paused: Optional[bool] = None
+    requires_flaresolverr: Optional[bool] = None
+
 
 
 class FeedTreeItemDTO(BaseModel):

@@ -129,13 +129,14 @@ class ApiClient {
     return this.request("/api/feeds");
   }
 
-  async addFeed(feedUrl, categoryId = null, customTitle = null) {
+  async addFeed(feedUrl, categoryId = null, customTitle = null, requiresFlareSolverr = false) {
     return this.request("/api/feeds", {
       method: "POST",
       body: JSON.stringify({
         feed_url: feedUrl,
         category_id: categoryId,
         custom_title: customTitle,
+        requires_flaresolverr: Boolean(requiresFlareSolverr),
       }),
     });
   }

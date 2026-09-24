@@ -10,6 +10,7 @@ import hashlib
 import ipaddress
 import logging
 import random
+import re
 import socket
 import ssl
 import urllib.parse
@@ -591,6 +592,15 @@ class CrawlerEngine:
             media = HTMLSanitizer.extract_media(clean_html)
             cover_image = media.images[0] if media.images else None
 
+            # 若內文僅為孤立圖片網址，自動升級為 <img> 標籤 (Auto-upgrade raw image URL to <img>)
+            raw_stripped = content_html.strip()
+            if raw_stripped and re.match(r"^https?://[^\s<>\"']+\.(?:jpg|jpeg|png|gif|webp|svg|bmp|avif)(?:\?[^\s<>\"']*)?$", raw_stripped, re.IGNORECASE):
+                clean_html = f'<p><img src="{raw_stripped}" alt="{title}" style="max-width: 100%; height: auto; border-radius: 6px;" /></p>'
+                clean_text = ""
+                snippet = f"[圖片] {title}"
+                if not cover_image:
+                    cover_image = raw_stripped
+
             # 附加標籤 (Extra tags)
             tags: list[str] = []
             if hasattr(entry, "tags") and entry.tags:
@@ -614,3 +624,29 @@ class CrawlerEngine:
             articles.append(article_dto)
 
         return articles, feed_dto
+
+    @staticmethod
+    def extract_full_text_from_html(
+        html_str: str, base_url: str = ""
+    ) -> Optional[str]:
+        """使用 Trafilatura 從原始 HTML 萃取結構化去噪內文 (Extract clean article content using Trafilatura).
+
+        :param html_str: 原始 HTML 字串 (Raw HTML markup)
+        :param base_url: 基準網址 (Base URL)
+        :return: 脫毒與去噪後的 HTML 內文或 None
+        """
+        try:
+            import trafilatura
+
+            extracted = trafilatura.extract(
+                html_str,
+                url=base_url,
+                include_links=True,
+                include_images=True,
+                output_format="html",
+            )
+            return HTMLSanitizer.clean(extracted) if extracted else None
+        except Exception as e:
+            logger.debug(f"Trafilatura extraction skipped or failed: {e}")
+            return None
+
