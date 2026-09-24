@@ -9,6 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from omnirss.api.dependencies import get_current_user, get_db
+from omnirss.core.crawler_engine import CrawlerEngine
 from omnirss.api.schemas import (
     ArticleDetailDTO,
     ArticleListItemDTO,
@@ -65,11 +66,22 @@ async def list_articles(
 
     search_kw = q or search
     if search_kw and search_kw.strip():
-        # FTS5 毫秒級倒排索引檢索 (FTS5 Trigram Full-Text Index Query)
         kw = search_kw.strip()
-        safe_fts_kw = '"' + kw.replace('"', '""') + '"'
-        conditions.append("a.id IN (SELECT rowid FROM articles_fts WHERE articles_fts MATCH ?)")
-        params.append(safe_fts_kw)
+        if len(kw) >= 3:
+            # 長詞 (>=3 字元) 使用 FTS5 Trigram 倒排索引 + LIKE 容錯
+            safe_fts_kw = '"' + kw.replace('"', '""') + '"'
+            like_kw = f"%{kw}%"
+            conditions.append(
+                "(a.id IN (SELECT rowid FROM articles_fts WHERE articles_fts MATCH ?) OR a.title LIKE ? OR a.snippet LIKE ? OR a.author LIKE ?)"
+            )
+            params.extend([safe_fts_kw, like_kw, like_kw, like_kw])
+        else:
+            # 短詞 (<3 字元，如單字「台」、「AI」、「科技」) 自動容錯使用 LIKE 模糊比對
+            like_kw = f"%{kw}%"
+            conditions.append(
+                "(a.title LIKE ? OR a.snippet LIKE ? OR a.author LIKE ?)"
+            )
+            params.extend([like_kw, like_kw, like_kw])
 
     where_clause = " WHERE " + " AND ".join(conditions)
     sort_column = "a.published_at" if sort_by == "published_at" else "a.created_at"
@@ -112,6 +124,7 @@ async def list_articles(
 
     items: list[ArticleListItemDTO] = []
     for r in rows:
+        read_bool = bool(r["is_read"])
         items.append(
             ArticleListItemDTO(
                 id=r["id"],
@@ -125,7 +138,8 @@ async def list_articles(
                 snippet=r["snippet"] or "",
                 cover_image_url=r["cover_image_url"],
                 published_at=r["published_at"],
-                is_read=bool(r["is_read"]),
+                is_read=read_bool,
+                is_unread=not read_bool,
                 is_starred=bool(r["is_starred"]),
                 tags=[],
             )
@@ -168,6 +182,7 @@ async def get_article_detail(
 
     content_html = row["content_html"] or (f"<p>{row['snippet']}</p>" if row["snippet"] else "<p>本篇無額外內文</p>")
     content_text = row["content_text"] or row["snippet"] or ""
+    read_bool = bool(row["is_read"])
 
     return ArticleDetailDTO(
         id=row["id"],
@@ -181,7 +196,8 @@ async def get_article_detail(
         snippet=row["snippet"] or "",
         cover_image_url=row["cover_image_url"],
         published_at=row["published_at"],
-        is_read=bool(row["is_read"]),
+        is_read=read_bool,
+        is_unread=not read_bool,
         is_starred=bool(row["is_starred"]),
         content_html=content_html,
         content_text=content_text,
@@ -334,3 +350,91 @@ async def mark_all_read_flexible(
 
     await conn.commit()
     return {"marked_count": len(rows), "status": "success"}
+
+
+@router.post("/{article_id}/fetch-full-content", response_model=ArticleDetailDTO)
+async def fetch_article_full_content(
+    article_id: int,
+    user: dict = Depends(get_current_user),
+    conn: aiosqlite.Connection = Depends(get_db),
+) -> ArticleDetailDTO:
+    """透過 Trafilatura 抓取原始網頁全文並更新文章 (Fetch Full Web Page Content via Trafilatura)."""
+    user_id = user["id"]
+    cur = await conn.execute(
+        """
+        SELECT a.id, a.feed_id, a.url, a.title, a.author, a.snippet, a.published_at,
+               a.cover_image_url, COALESCE(uf.custom_title, f.title) as feed_title,
+               uf.category_id, c.name as category_name,
+               COALESCE(uas.is_read, 0) as is_read,
+               COALESCE(uas.is_starred, 0) as is_starred,
+               f.requires_flaresolverr
+        FROM articles_hot a
+        JOIN feeds f ON a.feed_id = f.id
+        JOIN user_feeds uf ON a.feed_id = uf.feed_id
+        LEFT JOIN categories c ON uf.category_id = c.id
+        LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
+        WHERE a.id = ? AND uf.user_id = ?
+        """,
+        (article_id, user_id),
+    )
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    article_url = row["url"]
+    if not article_url:
+        raise HTTPException(status_code=400, detail="Article URL is empty")
+
+    crawler = CrawlerEngine()
+    try:
+        crawl_result = await crawler.fetch_feed(
+            url=article_url,
+            requires_flaresolverr=bool(row["requires_flaresolverr"]),
+        )
+        if crawl_result.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch original page: HTTP {crawl_result.status_code}")
+
+        html_raw = crawl_result.body_bytes.decode("utf-8", errors="replace")
+        extracted_text = CrawlerEngine.extract_full_text_from_html(html_raw, base_url=article_url)
+        if not extracted_text:
+            extracted_text = row["snippet"] or "無法提取有效內文"
+
+        # 封裝為結構化段落 HTML
+        paragraphs = extracted_text.split("\n\n")
+        new_content_html = "".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
+        new_snippet = extracted_text[:200]
+
+        await conn.execute(
+            """
+            UPDATE articles_hot
+            SET content_html = ?, content_text = ?, snippet = ?
+            WHERE id = ?
+            """,
+            (new_content_html, extracted_text, new_snippet, article_id),
+        )
+        await conn.commit()
+
+        read_bool = bool(row["is_read"])
+        return ArticleDetailDTO(
+            id=row["id"],
+            feed_id=row["feed_id"],
+            feed_title=row["feed_title"],
+            category_id=row["category_id"],
+            category_name=row["category_name"],
+            title=row["title"],
+            url=row["url"],
+            author=row["author"],
+            snippet=new_snippet,
+            cover_image_url=row["cover_image_url"],
+            published_at=row["published_at"],
+            is_read=read_bool,
+            is_unread=not read_bool,
+            is_starred=bool(row["is_starred"]),
+            content_html=new_content_html,
+            content_text=extracted_text,
+            tags=[],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {exc}")

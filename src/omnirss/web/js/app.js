@@ -258,12 +258,12 @@ class App {
     if (filter === "feed" && feedId) {
       const feed = feeds.find((f) => f.id === feedId);
       const name = feed ? (feed.title || "來源") : "來源";
-      labelEl.textContent = `已讀 (${name.slice(0, 6)})`;
+      labelEl.textContent = `已讀 (${name})`;
     } else if (filter === "category") {
       if (catId) {
         const cat = categories.find((c) => c.id === catId);
         const name = cat ? cat.name : "分類";
-        labelEl.textContent = `已讀 (${name.slice(0, 6)})`;
+        labelEl.textContent = `已讀 (${name})`;
       } else {
         labelEl.textContent = "已讀 (未分類)";
       }
@@ -312,17 +312,23 @@ class App {
         store.set("selectedArticle", fullArticle);
 
         // Delayed Auto Mark as Read Behavior
-        if (fullArticle.is_unread) {
+        const isUnread = fullArticle.is_read === false || fullArticle.is_read === 0 || fullArticle.is_unread === true;
+        if (isUnread) {
           const delaySec = store.get("readDelaySec") ?? 3;
 
           const executeMarkRead = async () => {
             try {
-              await api.updateArticleState(articleId, { is_unread: false });
+              await api.updateArticleState(articleId, { is_read: true, is_unread: false });
+              fullArticle.is_read = true;
               fullArticle.is_unread = false;
+              store.set("selectedArticle", { ...fullArticle });
 
               const articles = store.get("articles") || [];
               const a = articles.find((item) => item.id === articleId);
-              if (a) a.is_unread = false;
+              if (a) {
+                a.is_read = 1;
+                a.is_unread = false;
+              }
               store.set("articles", [...articles]);
 
               // Update feed counters
@@ -347,6 +353,11 @@ class App {
       } catch (err) {
         console.error("Failed to load article details:", err);
       }
+    });
+
+    // Open Category Settings Modal
+    window.addEventListener("omnirss:open-category-settings", (e) => {
+      this.modals.openCategorySettings(e.detail);
     });
 
     // Inline Scope Mark Read (from Tree item)

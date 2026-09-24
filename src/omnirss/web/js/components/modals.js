@@ -35,6 +35,7 @@ export class ModalController {
 
     this.bindAddFeed();
     this.bindAddCategory();
+    this.bindCategorySettings();
     this.bindRules();
     this.bindPlugins();
     this.bindSettings();
@@ -115,6 +116,74 @@ export class ModalController {
         alert(`建立失敗: ${err.message}`);
       }
     });
+  }
+
+  // 2.5 Category Settings
+  openCategorySettings(categoryData) {
+    if (!categoryData) return;
+    const { id, name } = categoryData;
+    const idInput = document.getElementById("input-cat-settings-id");
+    const nameInput = document.getElementById("input-cat-settings-name");
+    const retentionSelect = document.getElementById("select-cat-retention");
+    if (idInput) idInput.value = id;
+    if (nameInput) nameInput.value = name;
+
+    const categories = store.get("categories") || [];
+    const currentCat = categories.find((c) => c.id === id);
+    if (retentionSelect && currentCat) {
+      retentionSelect.value = currentCat.custom_retention_days !== null && currentCat.custom_retention_days !== undefined
+        ? String(currentCat.custom_retention_days)
+        : "";
+    }
+
+    this.openModal("modal-category-settings");
+  }
+
+  bindCategorySettings() {
+    const form = document.getElementById("form-category-settings");
+    if (!form) return;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = parseInt(document.getElementById("input-cat-settings-id").value, 10);
+      const name = document.getElementById("input-cat-settings-name").value.trim();
+      const retentionVal = document.getElementById("select-cat-retention").value;
+      const customRetentionDays = retentionVal === "" ? null : parseInt(retentionVal, 10);
+
+      if (!id || !name) return;
+
+      try {
+        await api.updateCategory(id, {
+          name,
+          custom_retention_days: customRetentionDays,
+        });
+        this.closeModal("modal-category-settings");
+        window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "分類設定已更新", type: "success" } }));
+        window.dispatchEvent(new CustomEvent("omnirss:refresh-all"));
+      } catch (err) {
+        alert(`更新分類失敗: ${err.message}`);
+      }
+    });
+
+    const deleteBtn = document.getElementById("btn-delete-current-category");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", async () => {
+        const id = parseInt(document.getElementById("input-cat-settings-id").value, 10);
+        const name = document.getElementById("input-cat-settings-name").value.trim();
+        if (!id) return;
+
+        if (window.confirm(`確定要刪除分類「${name}」嗎？其下的訂閱源將自動保留並轉為未分類。`)) {
+          try {
+            await api.deleteCategory(id);
+            this.closeModal("modal-category-settings");
+            window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "已成功刪除分類", type: "success" } }));
+            window.dispatchEvent(new CustomEvent("omnirss:refresh-all"));
+          } catch (err) {
+            alert(`刪除分類失敗: ${err.message}`);
+          }
+        }
+      });
+    }
   }
 
   // 3. Rules Manager

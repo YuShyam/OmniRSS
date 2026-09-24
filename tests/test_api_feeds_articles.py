@@ -101,7 +101,18 @@ async def test_feeds_and_articles_api(tmp_path):
         star_res = await ac.put(f"/api/articles/{a1_id}/star?is_starred=true", headers=headers)
         assert star_res.status_code == 200
 
-        # 7. 批次全站標記已讀
+        # 7. 短詞搜尋測試 (驗證短詞 LIKE 與 FTS 雙軌)
+        search_short = await ac.get("/api/articles?search=Py", headers=headers)
+        assert search_short.status_code == 200
+        assert search_short.json()["total"] >= 1
+
+        # 8. 分類更新 (名稱與獨立保留天數)
+        cat_update_res = await ac.put(f"/api/categories/{cat_id}", json={"name": "深度科技", "custom_retention_days": 14}, headers=headers)
+        assert cat_update_res.status_code == 200
+        assert cat_update_res.json()["name"] == "深度科技"
+        assert cat_update_res.json()["custom_retention_days"] == 14
+
+        # 9. 批次全站標記已讀
         batch_res = await ac.put("/api/articles/mark-all-read", json={"scope": "all"}, headers=headers)
         assert batch_res.status_code == 200
         assert batch_res.json()["marked_count"] >= 1

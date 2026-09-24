@@ -25,14 +25,19 @@ export class ReaderView {
 
       const toggleReadBtn = e.target.closest("#btn-reader-toggle-read");
       if (toggleReadBtn) {
-        const newUnread = !article.is_unread;
-        await api.updateArticleState(article.id, { is_unread: newUnread });
+        const isCurrentUnread = article.is_read === false || article.is_read === 0 || article.is_unread === true;
+        const newUnread = !isCurrentUnread;
+        await api.updateArticleState(article.id, { is_read: !newUnread, is_unread: newUnread });
+        article.is_read = !newUnread;
         article.is_unread = newUnread;
         store.set("selectedArticle", { ...article });
 
-        const articles = store.get("articles");
+        const articles = store.get("articles") || [];
         const a = articles.find((item) => item.id === article.id);
-        if (a) a.is_unread = newUnread;
+        if (a) {
+          a.is_read = newUnread ? 0 : 1;
+          a.is_unread = newUnread;
+        }
         store.set("articles", [...articles]);
         return;
       }
@@ -44,10 +49,36 @@ export class ReaderView {
         article.is_starred = newStarred;
         store.set("selectedArticle", { ...article });
 
-        const articles = store.get("articles");
+        const articles = store.get("articles") || [];
         const a = articles.find((item) => item.id === article.id);
         if (a) a.is_starred = newStarred;
         store.set("articles", [...articles]);
+        return;
+      }
+
+      const fetchFullBtn = e.target.closest("#btn-reader-fetch-full");
+      if (fetchFullBtn) {
+        fetchFullBtn.classList.add("busy");
+        try {
+          const updated = await api.fetchFullContent(article.id);
+          store.set("selectedArticle", updated);
+
+          const articles = store.get("articles") || [];
+          const a = articles.find((item) => item.id === article.id);
+          if (a) {
+            a.snippet = updated.snippet;
+          }
+          store.set("articles", [...articles]);
+          window.dispatchEvent(
+            new CustomEvent("omnirss:toast", {
+              detail: { message: "已成功抓取並解析網頁全文", type: "success" },
+            })
+          );
+        } catch (err) {
+          alert(`抓取全文失敗: ${err.message}`);
+        } finally {
+          fetchFullBtn.classList.remove("busy");
+        }
         return;
       }
 
@@ -78,7 +109,7 @@ export class ReaderView {
     }
 
     const isStarred = article.is_starred === true;
-    const isUnread = article.is_unread !== false;
+    const isUnread = article.is_read === false || article.is_read === 0 || article.is_unread === true;
     const formattedDate = article.published_at ? new Date(article.published_at).toLocaleString() : "";
     const articleLink = article.url || article.link;
 
@@ -94,6 +125,11 @@ export class ReaderView {
           <button class="icon-btn" id="btn-reader-toggle-read" title="${isUnread ? t("reader.mark_read") : t("reader.mark_unread")}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
             <span>${isUnread ? t("reader.mark_read") : t("reader.mark_unread")}</span>
+          </button>
+
+          <button class="icon-btn" id="btn-reader-fetch-full" title="以 Trafilatura 抓取原始網頁全文">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span>抓取全文</span>
           </button>
         </div>
 

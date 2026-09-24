@@ -166,6 +166,7 @@ class ArticleListItemDTO(BaseModel):
     cover_image_url: Optional[str] = None
     published_at: datetime
     is_read: bool
+    is_unread: bool = False
     is_starred: bool
     tags: list[str] = Field(default_factory=list)
 

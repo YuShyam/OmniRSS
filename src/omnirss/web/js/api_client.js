@@ -121,6 +121,13 @@ class ApiClient {
     });
   }
 
+  async updateCategory(id, data) {
+    return this.request(`/api/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
   async deleteCategory(id) {
     return this.request(`/api/categories/${id}`, { method: "DELETE" });
   }
@@ -173,6 +180,12 @@ class ApiClient {
 
   async getArticle(id) {
     return this.request(`/api/articles/${id}`);
+  }
+
+  async fetchFullContent(id) {
+    return this.request(`/api/articles/${id}/fetch-full-content`, {
+      method: "POST",
+    });
   }
 
   async updateArticleState(id, patch) {
