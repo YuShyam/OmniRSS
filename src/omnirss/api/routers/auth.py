@@ -9,10 +9,19 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from omnirss.api.dependencies import get_current_user, get_db
-from omnirss.api.schemas import LoginRequest, TokenResponse, UserDTO, UserSetupRequest
+from omnirss.api.schemas import (
+    LoginRequest,
+    TokenResponse,
+    UserDTO,
+    UserSettingsDTO,
+    UserSettingsUpdateRequest,
+    UserSetupRequest,
+)
 from omnirss.core.security import PasswordHasher, TokenManager
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+user_router = APIRouter(prefix="/api/user", tags=["User"])
+
 
 
 @router.post("/setup", response_model=UserDTO)
@@ -136,3 +145,47 @@ async def regenerate_api_key(
     )
     await conn.commit()
     return {"api_key": new_key, "message": "API Key successfully rotated"}
+
+
+@router.get("/settings", response_model=UserSettingsDTO)
+async def get_user_settings(
+    user: dict = Depends(get_current_user),
+) -> UserSettingsDTO:
+    """取得當前使用者偏好設定 (Get Current User Settings)."""
+    settings: dict = {}
+    try:
+        settings = json.loads(user.get("settings_json") or "{}")
+    except Exception:
+        settings = {}
+    return UserSettingsDTO(settings=settings)
+
+
+@router.put("/settings", response_model=UserSettingsDTO)
+async def update_user_settings(
+    req: UserSettingsUpdateRequest,
+    user: dict = Depends(get_current_user),
+    conn: aiosqlite.Connection = Depends(get_db),
+) -> UserSettingsDTO:
+    """更新當前使用者偏好設定 (Update Current User Settings)."""
+    existing: dict = {}
+    try:
+        existing = json.loads(user.get("settings_json") or "{}")
+    except Exception:
+        existing = {}
+
+    existing.update(req.settings)
+    updated_json = json.dumps(existing, ensure_ascii=False)
+
+    await conn.execute(
+        "UPDATE users SET settings_json = ? WHERE id = ?",
+        (updated_json, user["id"]),
+    )
+    await conn.commit()
+    return UserSettingsDTO(settings=existing)
+
+
+# Register identical handlers on user_router for /api/user/settings
+user_router.add_api_route("/settings", get_user_settings, methods=["GET"], response_model=UserSettingsDTO)
+user_router.add_api_route("/settings", update_user_settings, methods=["PUT"], response_model=UserSettingsDTO)
+
+

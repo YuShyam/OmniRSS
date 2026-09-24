@@ -53,8 +53,9 @@ export class ReaderView {
 
       const copyLinkBtn = e.target.closest("#btn-reader-copy-link");
       if (copyLinkBtn) {
-        if (article.link) {
-          navigator.clipboard.writeText(article.link);
+        const urlToCopy = article.url || article.link;
+        if (urlToCopy) {
+          navigator.clipboard.writeText(urlToCopy);
           window.dispatchEvent(
             new CustomEvent("omnirss:toast", {
               detail: { message: t("settings.copied"), type: "success" },
@@ -79,6 +80,7 @@ export class ReaderView {
     const isStarred = article.is_starred === true;
     const isUnread = article.is_unread !== false;
     const formattedDate = article.published_at ? new Date(article.published_at).toLocaleString() : "";
+    const articleLink = article.url || article.link;
 
     let html = `
       <!-- Actions Toolbar -->
@@ -101,9 +103,9 @@ export class ReaderView {
           </button>
 
           ${
-            article.link
+            articleLink
               ? `
-            <a class="icon-btn" href="${article.link}" target="_blank" rel="noopener noreferrer" title="${t("reader.open_original")}">
+            <a class="icon-btn" href="${articleLink}" target="_blank" rel="noopener noreferrer" title="${t("reader.open_original")}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               <span>${t("reader.open_original")}</span>
             </a>
@@ -117,7 +119,7 @@ export class ReaderView {
       <div class="reader-scroll-area">
         <div class="article-header">
           <h1 class="article-title">
-            ${article.link ? `<a href="${article.link}" target="_blank" rel="noopener noreferrer">${this.escape(article.title)}</a>` : this.escape(article.title)}
+            ${articleLink ? `<a href="${articleLink}" target="_blank" rel="noopener noreferrer">${this.escape(article.title)}</a>` : this.escape(article.title)}
           </h1>
 
           <div class="article-meta">

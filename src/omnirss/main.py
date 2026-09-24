@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from omnirss.api.routers import (
     assets_router,
     auth_router,
+    user_router,
     articles_router,
     backup_router,
     edge_router,
@@ -135,7 +136,9 @@ async def health_check() -> dict:
 
 # 掛載領域路由控制器
 app.include_router(auth_router)
+app.include_router(user_router)
 app.include_router(feeds_router)
+
 app.include_router(articles_router)
 app.include_router(rules_router)
 app.include_router(plugins_router)

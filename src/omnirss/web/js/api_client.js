@@ -166,7 +166,8 @@ class ApiClient {
     if (params.offset) query.append("offset", params.offset);
 
     const qs = query.toString();
-    return this.request(`/api/articles${qs ? `?${qs}` : ""}`);
+    const res = await this.request(`/api/articles${qs ? `?${qs}` : ""}`);
+    return Array.isArray(res) ? res : (res && res.items ? res.items : []);
   }
 
   async getArticle(id) {
@@ -241,6 +242,19 @@ class ApiClient {
   async exportUserBackup() {
     return this.request("/api/user/backup");
   }
+
+  // User Settings
+  async getUserSettings() {
+    return this.request("/api/user/settings");
+  }
+
+  async updateUserSettings(settings) {
+    return this.request("/api/user/settings", {
+      method: "PUT",
+      body: JSON.stringify({ settings }),
+    });
+  }
 }
+
 
 export const api = new ApiClient();

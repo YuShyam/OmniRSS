@@ -3,7 +3,7 @@
    ========================================================================== */
 
 .tree-header {
-  height: 32px;
+  height: 34px;
   padding: 0 8px;
   display: flex;
   align-items: center;
@@ -32,16 +32,22 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 3px;
+  padding: 4px;
   border-radius: var(--border-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.15s ease;
 }
 
 .tree-action-btn:hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
+}
+
+.tree-action-btn.active {
+  background: var(--accent-primary-dim);
+  color: var(--accent-primary);
 }
 
 .tree-scroll-area {
@@ -69,9 +75,8 @@
   color: var(--text-secondary);
   position: relative;
   transition: background-color 0.1s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  width: 100%;
 }
 
 .tree-item:hover {
@@ -99,26 +104,61 @@
   color: var(--accent-primary);
 }
 
-.tree-item .tree-label {
+.tree-label {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tree-item .tree-count {
+.tree-count {
   font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-muted);
-  background: var(--bg-badge);
-  padding: 1px 6px;
-  border-radius: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 4px;
+}
+
+.tree-count.has-unread {
+  color: var(--accent-primary);
+}
+
+/* Row Hover Actions (Mark Read / Delete) */
+.tree-row-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
   flex-shrink: 0;
 }
 
-.tree-item .tree-count.has-unread {
-  background: var(--accent-primary-dim);
-  color: var(--accent-primary);
+.tree-item:hover .tree-row-actions,
+.category-item:hover .tree-row-actions,
+.feed-item:hover .tree-row-actions {
+  display: flex;
+}
+
+.tree-row-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-row-btn:hover {
+  background: var(--bg-surface-active);
+  color: var(--text-primary);
+}
+
+.tree-row-btn.btn-delete:hover {
+  color: var(--accent-danger, #ef4444);
 }
 
 /* Categories & Feeds Section */
@@ -126,18 +166,25 @@
   height: var(--row-height);
   display: flex;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 6px 0 4px;
   gap: 4px;
   cursor: pointer;
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text-secondary);
   transition: background-color 0.1s;
+  min-width: 0;
+  width: 100%;
 }
 
 .category-item:hover {
   background-color: var(--bg-surface-hover);
   color: var(--text-primary);
+}
+
+.category-item.active {
+  background-color: var(--bg-selected-row);
+  color: var(--text-unread);
 }
 
 .category-toggle {
@@ -149,6 +196,7 @@
   color: var(--text-muted);
   cursor: pointer;
   transition: transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .category-toggle.collapsed svg {
@@ -169,6 +217,8 @@
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   transition: background-color 0.1s;
+  min-width: 0;
+  width: 100%;
 }
 
 .feed-item:hover {

@@ -109,8 +109,9 @@ export function initKeybindings() {
       case "o": {
         e.preventDefault();
         const art = articles.find((a) => a.id === selectedId);
-        if (art && art.link) {
-          window.open(art.link, "_blank", "noopener,noreferrer");
+        const link = art ? (art.url || art.link) : null;
+        if (link) {
+          window.open(link, "_blank", "noopener,noreferrer");
         }
         break;
       }

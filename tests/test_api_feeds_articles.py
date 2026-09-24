@@ -50,13 +50,13 @@ async def test_feeds_and_articles_api(tmp_path):
                 (user_id, feed_id, cat_id, "我的科技網誌"),
             )
 
-            # 寫入兩篇熱文章
+            # 寫入兩篇熱文章 (含完整 content_html 與 content_text)
             h1 = compute_entry_hash(feed_id, "post-1", "https://tech.example.com/1")
             h2 = compute_entry_hash(feed_id, "post-2", "https://tech.example.com/2")
             await conn.execute(
                 """
-                INSERT INTO articles_hot (feed_id, entry_hash, title, url, snippet, published_at)
-                VALUES (?, ?, 'Python 效能評測', 'https://tech.example.com/1', 'JIT 性能分析', datetime('now'))
+                INSERT INTO articles_hot (feed_id, entry_hash, title, url, snippet, content_html, content_text, published_at)
+                VALUES (?, ?, 'Python 效能評測', 'https://tech.example.com/1', 'JIT 性能分析', '<p>完整長文：包含圖表與分析 <img src=\"https://example.com/pic.png\"/></p>', '完整長文：包含圖表與分析', datetime('now'))
                 """,
                 (feed_id, h1),
             )
@@ -64,8 +64,8 @@ async def test_feeds_and_articles_api(tmp_path):
 
             await conn.execute(
                 """
-                INSERT INTO articles_hot (feed_id, entry_hash, title, url, snippet, published_at)
-                VALUES (?, ?, 'FastAPI 最佳實踐', 'https://tech.example.com/2', '非同步架構設計', datetime('now', '-1 hour'))
+                INSERT INTO articles_hot (feed_id, entry_hash, title, url, snippet, content_html, content_text, published_at)
+                VALUES (?, ?, 'FastAPI 最佳實踐', 'https://tech.example.com/2', '非同步架構設計', '<p>完整指南第二篇</p>', '完整指南第二篇', datetime('now', '-1 hour'))
                 """,
                 (feed_id, h2),
             )
@@ -81,12 +81,18 @@ async def test_feeds_and_articles_api(tmp_path):
         tree_data = tree_res.json()
         assert len(tree_data["categories"]) >= 1
 
-        # 5. 查詢文章列表
+        # 5. 查詢文章列表與單篇完整內文
         articles_res = await ac.get("/api/articles?page=1&page_size=10", headers=headers)
         assert articles_res.status_code == 200
         art_data = articles_res.json()
         assert art_data["total"] == 2
         assert len(art_data["items"]) == 2
+
+        detail_res = await ac.get(f"/api/articles/{a1_id}", headers=headers)
+        assert detail_res.status_code == 200
+        detail_data = detail_res.json()
+        assert "<img" in detail_data["content_html"]
+        assert "完整長文" in detail_data["content_text"]
 
         # 6. 標記單篇文章已讀與加星
         read_res = await ac.put(f"/api/articles/{a1_id}/read?is_read=true", headers=headers)

@@ -136,6 +136,11 @@
   max-width: 860px;
 }
 
+/* Dynamic Font Sizes */
+.font-size-small .article-content { font-size: 13px; }
+.font-size-medium .article-content { font-size: 15px; }
+.font-size-large .article-content { font-size: 18px; }
+
 .article-content p {
   margin-bottom: 1.2em;
 }

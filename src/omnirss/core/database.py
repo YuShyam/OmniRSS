@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS articles_hot (
     url TEXT NOT NULL,
     author TEXT,
     snippet TEXT,
+    content_html TEXT,
+    content_text TEXT,
     cover_image_url TEXT,
     published_at DATETIME NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -331,6 +333,12 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
         conn.row_factory = sqlite3.Row
         apply_pragmas(conn)
         conn.executescript(DDL_SCHEMA)
+        # 自動向後相容補齊歷史資料庫欄位 (Auto-migrate existing database columns)
+        for col_def in ["content_html TEXT", "content_text TEXT"]:
+            try:
+                conn.execute(f"ALTER TABLE articles_hot ADD COLUMN {col_def};")
+            except sqlite3.OperationalError:
+                pass
         try:
             conn.executescript(FTS5_SCHEMA)
         except sqlite3.OperationalError as e:

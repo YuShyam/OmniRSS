@@ -305,8 +305,8 @@ class OmniScheduler:
                 await conn.execute(
                     """
                     INSERT OR IGNORE INTO articles_hot (
-                        feed_id, entry_hash, title, url, author, snippet, cover_image_url, published_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        feed_id, entry_hash, title, url, author, snippet, content_html, content_text, cover_image_url, published_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         feed_id,
@@ -315,6 +315,8 @@ class OmniScheduler:
                         article.url,
                         article.author,
                         article.snippet,
+                        article.content_html,
+                        article.content_text,
                         article.cover_image_url,
                         published_str,
                     ),
@@ -353,9 +355,30 @@ class OmniScheduler:
 
                 await conn.commit()
 
-    async def maintain_database(self) -> None:
-        """執行資料庫維護 (Execute database maintenance and WAL checkpoint)."""
-        logger.info("Starting scheduled database maintenance...")
+    async def maintain_database(self, retention_days: int = 60) -> None:
+        """執行資料庫維護與過期文章清理 (Execute database maintenance, retention cleanup, and WAL checkpoint).
+
+        :param retention_days: 預設保留天數 (Default retention days for unstarred articles)
+        """
+        logger.info("Starting scheduled database maintenance and retention cleanup...")
         async with self.db.get_connection() as conn:
+            # 清理超過保留天數且未被加星標收藏的文章 (Clean expired non-starred articles)
+            cursor = await conn.execute(
+                """
+                DELETE FROM articles_hot
+                WHERE id NOT IN (
+                    SELECT article_id FROM user_article_states WHERE is_starred = 1
+                )
+                AND published_at < datetime('now', '-' || ? || ' days')
+                """,
+                (retention_days,),
+            )
+            deleted_count = cursor.rowcount if cursor.rowcount > 0 else 0
+            if deleted_count > 0:
+                logger.info(
+                    f"Retention cleanup purged {deleted_count} expired articles."
+                )
+
+            await conn.commit()
             await conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         logger.info("Database maintenance completed successfully.")

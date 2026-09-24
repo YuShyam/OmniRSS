@@ -49,9 +49,9 @@
           <span data-i18n="tree.refresh_all">整理</span>
         </button>
 
-        <button class="icon-btn" id="btn-mark-all-read" data-i18n-title="tree.mark_all_read">
+        <button class="icon-btn" id="btn-mark-all-read" title="標記當前範圍為已讀">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <span data-i18n="tree.mark_all_read">已讀</span>
+          <span id="btn-mark-read-label" data-i18n="tree.mark_all_read">標為已讀</span>
         </button>
       </div>
 
@@ -72,12 +72,6 @@
           <span data-i18n="nav.quiet_mode">寧靜模式</span>
         </button>
 
-        <!-- OPML -->
-        <button class="icon-btn" id="btn-open-opml" title="OPML 匯出/匯入">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>OPML</span>
-        </button>
-
         <!-- Rules -->
         <button class="icon-btn" id="btn-open-rules" title="過濾規則中心">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -90,7 +84,7 @@
           <span data-i18n="nav.plugins">外掛</span>
         </button>
 
-        <!-- Settings -->
+        <!-- Settings (Includes Appearance, Reading, Backup & OPML, API Key) -->
         <button class="icon-btn" id="btn-open-settings" title="系統設定">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -115,8 +109,15 @@
       <!-- Left Pane: Subscription Directory Tree -->
       <section class="pane-tree">
         <div class="tree-header">
-          <span class="tree-title" data-i18n="tree.subscriptions">訂閱目錄樹</span>
-          <div class="tree-actions"></div>
+          <span class="tree-title" data-i18n="tree.subscriptions">訂閱目錄</span>
+          <div class="tree-actions">
+            <button class="tree-action-btn" id="btn-tree-unread-only" data-i18n-title="tree.toggle_unread_only" title="僅顯示未讀來源">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="tree-action-btn" id="btn-tree-collapse-all" data-i18n-title="tree.toggle_collapse" title="全部展開/折疊">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+            </button>
+          </div>
         </div>
         <div class="tree-scroll-area" id="tree-scroll-container">
           <!-- Populated by TreeView -->
@@ -248,39 +249,7 @@
     </div>
   </div>
 
-  <!-- Modal 3: OPML Import/Export -->
-  <div class="modal-overlay" id="modal-opml">
-    <div class="modal-box">
-      <div class="modal-header">
-        <div class="modal-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>OPML 雙向匯出與匯入</span>
-        </div>
-        <button class="modal-close-btn">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group" style="border-bottom: 1px solid var(--border-color); padding-bottom: 16px;">
-          <label class="form-label">匯出備份 (Export OPML 2.0)</label>
-          <div class="form-help" style="margin-bottom: 8px;">完整保留所有目錄結構樹與頻道自訂標題。</div>
-          <button class="btn btn-primary" id="btn-export-opml">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            下載 OPML 備份檔
-          </button>
-        </div>
-
-        <form id="form-import-opml" style="margin-top: 14px;">
-          <div class="form-group">
-            <label class="form-label">匯入訂閱清單 (Import OPML)</label>
-            <input type="file" id="input-opml-file" accept=".opml,.xml" class="form-input" required />
-            <div class="form-help">支援 Feedly, Inoreader, QuiteRSS 匯出的標準 OPML 檔案</div>
-          </div>
-          <button type="submit" class="btn btn-primary">開始匯入</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal 4: Rules Manager -->
+  <!-- Modal 3: Rules Manager -->
   <div class="modal-overlay" id="modal-rules">
     <div class="modal-box modal-lg">
       <div class="modal-header">
@@ -342,7 +311,7 @@
     </div>
   </div>
 
-  <!-- Modal 5: Plugin Center & Telemetry -->
+  <!-- Modal 4: Plugin Center & Telemetry -->
   <div class="modal-overlay" id="modal-plugins">
     <div class="modal-box modal-lg">
       <div class="modal-header">
@@ -360,37 +329,153 @@
     </div>
   </div>
 
-  <!-- Modal 6: Settings -->
+  <!-- Modal 5: Upgraded Tabbed Settings Center -->
   <div class="modal-overlay" id="modal-settings">
     <div class="modal-box">
       <div class="modal-header">
         <div class="modal-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          <span data-i18n="settings.title">偏好與中繼金鑰設定</span>
+          <span data-i18n="settings.title">系統偏好設定</span>
         </div>
         <button class="modal-close-btn">&times;</button>
       </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="modal-tabs-nav">
+        <button class="modal-tab-btn active" data-tab="tab-appearance" data-i18n="settings.tab_appearance">🎨 外觀介面</button>
+        <button class="modal-tab-btn" data-tab="tab-reading" data-i18n="settings.tab_reading">📖 閱讀行為</button>
+        <button class="modal-tab-btn" data-tab="tab-schedule" data-i18n="settings.tab_schedule">⏱️ 排程與清理</button>
+        <button class="modal-tab-btn" data-tab="tab-backup" data-i18n="settings.tab_backup">💾 備份與 OPML</button>
+        <button class="modal-tab-btn" data-tab="tab-api" data-i18n="settings.tab_api">🔑 API 金鑰</button>
+      </nav>
+
       <div class="modal-body">
-        <div class="form-group">
-          <label class="form-label" data-i18n="settings.api_key">個人專屬 API Key (中繼與剪藏鑑權)</label>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" class="form-input" id="input-api-key" readonly style="font-family: var(--font-mono); font-size: 12px;" />
-            <button type="button" class="btn" id="btn-copy-key">複製</button>
-            <button type="button" class="btn" id="btn-regen-key">重置</button>
+        <!-- Tab 1: Appearance -->
+        <div class="modal-tab-content active" id="tab-appearance">
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.theme">外觀主題</label>
+            <select class="form-select" id="select-setting-theme">
+              <option value="dark" data-i18n="settings.theme_dark">暗黑模式 (QuiteRSS Dark)</option>
+              <option value="light" data-i18n="settings.theme_light">明亮模式 (Modern Light)</option>
+              <option value="midnight" data-i18n="settings.theme_midnight">午夜藍 (Midnight Blue)</option>
+            </select>
           </div>
-          <div class="form-help">供 Chrome 擴充套件快剪及邊緣中繼連線鑑權使用。</div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.font_size">閱讀內文字體大小</label>
+            <select class="form-select" id="select-setting-font-size">
+              <option value="small" data-i18n="settings.font_small">緊湊小字 (Small)</option>
+              <option value="medium" data-i18n="settings.font_normal">舒適標準 (Normal)</option>
+              <option value="large" data-i18n="settings.font_large">易讀大字 (Large)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tab 2: Reading Behavior -->
+        <div class="modal-tab-content" id="tab-reading">
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.read_delay">切換文章自動標為已讀延遲</label>
+            <select class="form-select" id="select-setting-read-delay">
+              <option value="0" data-i18n="settings.delay_instant">立即已讀 (0 秒)</option>
+              <option value="1" data-i18n="settings.delay_1s">停留 1 秒後已讀</option>
+              <option value="3" data-i18n="settings.delay_3s">停留 3 秒後已讀 (推薦)</option>
+              <option value="5" data-i18n="settings.delay_5s">停留 5 秒後已讀</option>
+              <option value="-1" data-i18n="settings.delay_manual">手動標記 (不自動已讀)</option>
+            </select>
+            <div class="form-help">選取文章後，於下方閱讀區停留指定秒數後才標為已讀，避免快速瀏覽誤標。</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="checkbox-hide-empty" style="accent-color: var(--accent-primary);" />
+              <span data-i18n="settings.hide_empty">目錄樹隱藏 0 未讀之訂閱來源</span>
+            </label>
+            <div class="form-help">開啟後，目錄樹將僅呈現當前尚有未讀文章的頻道。</div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Schedule & Retention -->
+        <div class="modal-tab-content" id="tab-schedule">
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.retention">未加星已讀文章自動清理週期</label>
+            <select class="form-select" id="select-setting-retention">
+              <option value="30">保留 30 天</option>
+              <option value="60" selected>保留 60 天 (預設推薦)</option>
+              <option value="90">保留 90 天</option>
+              <option value="180">保留 180 天 (半年)</option>
+              <option value="365">保留 365 天 (一年)</option>
+              <option value="0">永久保留 (Never Delete)</option>
+            </select>
+            <div class="form-help">自動清除已讀且未加入星號收藏的過期文章，節省儲存空間。</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.poll_interval">全域頻道預設抓取間隔</label>
+            <select class="form-select" id="select-setting-poll-interval">
+              <option value="15">每 15 分鐘</option>
+              <option value="30" selected>每 30 分鐘 (預設推薦)</option>
+              <option value="60">每 1 小時</option>
+              <option value="120">每 2 小時</option>
+              <option value="360">每 6 小時</option>
+              <option value="720">每 12 小時</option>
+              <option value="1440">每 24 小時</option>
+            </select>
+            <div class="form-help">新建立訂閱源之預設排程間隔，可於單一頻道自訂覆蓋。</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="checkbox-image-vault" checked style="accent-color: var(--accent-primary);" />
+              <span>啟用圖片金庫 (Image Vault) SHA-256 去重與 WebP 封存</span>
+            </label>
+            <div class="form-help">星號收藏文章時自動將遠端圖片本地化轉存為 WebP 格式，防破圖。</div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Backup & OPML -->
+        <div class="modal-tab-content" id="tab-backup">
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.opml_title">OPML 訂閱清單匯出與匯入</label>
+            <div class="form-help" style="margin-bottom: 10px;" data-i18n="settings.opml_desc">支援 Feedly, Inoreader, QuiteRSS 等標準 OPML 格式。</div>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+              <button type="button" class="btn btn-primary" id="btn-export-opml" data-i18n="settings.opml_export">匯出 OPML 檔案</button>
+            </div>
+          </div>
+
+          <form id="form-import-opml" style="border-top: 1px solid var(--border-color-subtle); padding-top: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label class="form-label" data-i18n="settings.opml_import">選擇 OPML 檔案匯入</label>
+              <input type="file" id="input-opml-file" accept=".opml,.xml" class="form-input" required />
+            </div>
+            <button type="submit" class="btn btn-primary">開始匯入</button>
+          </form>
+
+          <div class="danger-zone-box">
+            <div class="danger-zone-title" data-i18n="settings.danger_zone">危險操作區</div>
+            <div class="form-help" style="margin-bottom: 8px;">清空所有訂閱來源及相關文章快取。</div>
+            <button type="button" class="btn btn-danger" id="btn-clear-all-feeds" data-i18n="settings.delete_all_feeds">一鍵清空所有訂閱來源</button>
+          </div>
+        </div>
+
+        <!-- Tab 5: API Keys -->
+        <div class="modal-tab-content" id="tab-api">
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings.api_key">個人專屬 API Key (中繼與剪藏鑑權)</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="text" class="form-input" id="input-api-key" readonly style="font-family: var(--font-mono); font-size: 12px;" />
+              <button type="button" class="btn" id="btn-copy-key">複製</button>
+              <button type="button" class="btn" id="btn-regen-key">重置</button>
+            </div>
+            <div class="form-help">供 Chrome 擴充套件快剪及邊緣中繼連線鑑權使用。</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal 7: Login Dialog -->
+  <!-- Modal 6: Login Dialog -->
   <div class="modal-overlay" id="modal-login">
     <div class="modal-box" style="width: 380px;">
       <div class="modal-header">
         <div class="modal-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          <span data-i18n="auth.login_title">OmniRSS 登入</span>
+          <span data-i18n="auth.login_title">OmniRSS 系統登入</span>
         </div>
       </div>
       <form id="form-login">
@@ -412,7 +497,7 @@
     </div>
   </div>
 
-  <!-- Modal 8: Keyboard Shortcuts Cheat Sheet -->
+  <!-- Modal 7: Keyboard Shortcuts Cheat Sheet -->
   <div class="modal-overlay" id="modal-hotkeys">
     <div class="modal-box modal-lg">
       <div class="modal-header">

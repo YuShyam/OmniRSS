@@ -2,7 +2,7 @@
  * OmniRSS 應用程式進入點與事件協同器 (Main Application Orchestrator).
  *
  * Coordinates state subscriptions, component bootstrapping, draggable splitters,
- * theme switching, and data polling loops.
+ * theme switching, delayed auto-read timers, 4-state visual handlers, and data polling loops.
  */
 
 import { store } from "./state.js";
@@ -16,11 +16,16 @@ import { ColumnPicker } from "./components/column_picker.js";
 import { ModalController } from "./components/modals.js";
 
 class App {
+  constructor() {
+    this.readTimer = null;
+  }
+
   async init() {
     console.log("OmniRSS UI Engine Initializing...");
 
-    // 1. Apply Initial Theme & Language
-    this.applyTheme(store.get("theme"));
+    // 1. Apply Initial Theme, Font Size & Language
+    this.applyTheme(store.get("theme") || "dark");
+    this.applyFontSize(store.get("fontSize") || "medium");
     updateDomTranslations();
 
     // 2. Initialize Components
@@ -36,10 +41,11 @@ class App {
     this.columnPicker = new ColumnPicker(colPickerEl);
     this.modals = new ModalController();
 
-    // 3. Initialize Keybindings & Splitters
+    // 3. Initialize Keybindings, Splitters, and Buttons
     initKeybindings();
     this.initSplitters();
     this.initHeaderButtons();
+    this.initTreeToolbars();
     this.initToastNotifications();
     this.initGlobalEvents();
 
@@ -54,6 +60,14 @@ class App {
     document.documentElement.setAttribute("data-theme", theme);
   }
 
+  applyFontSize(size) {
+    const readerEl = document.getElementById("reader-container");
+    if (readerEl) {
+      readerEl.classList.remove("font-size-small", "font-size-medium", "font-size-large");
+      readerEl.classList.add(`font-size-${size}`);
+    }
+  }
+
   initSplitters() {
     // Vertical Splitter (Tree <-> Main)
     const splitterV = document.getElementById("splitter-tree");
@@ -61,7 +75,7 @@ class App {
 
     if (splitterV && paneTree) {
       let isDragging = false;
-      splitterV.addEventListener("mousedown", (e) => {
+      splitterV.addEventListener("mousedown", () => {
         isDragging = true;
         splitterV.classList.add("dragging");
         document.body.style.cursor = "col-resize";
@@ -137,6 +151,7 @@ class App {
         store.set("lang", next);
         btnLang.textContent = next === "zh-TW" ? "繁中" : "EN";
         updateDomTranslations();
+        this.updateMarkReadScopeLabel();
         this.treeView.render();
         this.listView.renderHeaders();
       });
@@ -168,28 +183,6 @@ class App {
       });
     }
 
-    // Add Feed Button
-    const btnAddFeed = document.getElementById("btn-add-feed");
-    if (btnAddFeed) {
-      btnAddFeed.addEventListener("click", () => {
-        // Populate category dropdown
-        const cats = store.get("categories") || [];
-        const select = document.getElementById("select-feed-category");
-        if (select) {
-          select.innerHTML = `<option value="">未分類</option>` + cats.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
-        }
-        this.modals.openModal("modal-add-feed");
-      });
-    }
-
-    // Add Category Button
-    const btnAddCat = document.getElementById("btn-add-category");
-    if (btnAddCat) {
-      btnAddCat.addEventListener("click", () => {
-        this.modals.openModal("modal-add-category");
-      });
-    }
-
     // Refresh All Button
     const btnRefresh = document.getElementById("btn-refresh-all");
     if (btnRefresh) {
@@ -206,7 +199,7 @@ class App {
       });
     }
 
-    // Mark All Read Button
+    // Mark All Read Button (Scope Aware)
     const btnMarkAll = document.getElementById("btn-mark-all-read");
     if (btnMarkAll) {
       btnMarkAll.addEventListener("click", async () => {
@@ -215,6 +208,7 @@ class App {
         await api.markAllRead(feedId, catId);
         await this.reloadFeedsAndCounts();
         await this.loadArticles();
+        window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "已標記為已讀", type: "success" } }));
       });
     }
 
@@ -227,6 +221,54 @@ class App {
         store.set("token", null);
         this.modals.openModal("modal-login");
       });
+    }
+  }
+
+  initTreeToolbars() {
+    // Tree: Toggle unread-only
+    const btnUnreadOnly = document.getElementById("btn-tree-unread-only");
+    if (btnUnreadOnly) {
+      if (store.get("hideEmptyFeeds")) btnUnreadOnly.classList.add("active");
+      btnUnreadOnly.addEventListener("click", () => {
+        const next = !store.get("hideEmptyFeeds");
+        store.set("hideEmptyFeeds", next);
+        btnUnreadOnly.classList.toggle("active", next);
+      });
+    }
+
+    // Tree: Toggle expand/collapse all
+    const btnCollapseAll = document.getElementById("btn-tree-collapse-all");
+    if (btnCollapseAll) {
+      btnCollapseAll.addEventListener("click", () => {
+        this.treeView.toggleCollapseAll();
+      });
+    }
+  }
+
+  updateMarkReadScopeLabel() {
+    const labelEl = document.getElementById("btn-mark-read-label");
+    if (!labelEl) return;
+
+    const filter = store.get("activeFilter");
+    const feedId = store.get("activeFeedId");
+    const feeds = store.get("feeds") || [];
+    const categories = store.get("categories") || [];
+    const catId = store.get("activeCategoryId");
+
+    if (filter === "feed" && feedId) {
+      const feed = feeds.find((f) => f.id === feedId);
+      const name = feed ? (feed.title || "來源") : "來源";
+      labelEl.textContent = `已讀 (${name.slice(0, 6)})`;
+    } else if (filter === "category") {
+      if (catId) {
+        const cat = categories.find((c) => c.id === catId);
+        const name = cat ? cat.name : "分類";
+        labelEl.textContent = `已讀 (${name.slice(0, 6)})`;
+      } else {
+        labelEl.textContent = "已讀 (未分類)";
+      }
+    } else {
+      labelEl.textContent = t("tree.mark_all_read");
     }
   }
 
@@ -249,28 +291,108 @@ class App {
   }
 
   initGlobalEvents() {
+    // Font size event
+    window.addEventListener("omnirss:font-size-changed", (e) => {
+      this.applyFontSize(e.detail.size);
+    });
+
+    // Select article event with configurable auto-read timer
     window.addEventListener("omnirss:select-article", async (e) => {
       const articleId = e.detail.id;
       store.set("selectedArticleId", articleId);
+
+      // Clear any pending auto-read timer from previously viewed article
+      if (this.readTimer) {
+        clearTimeout(this.readTimer);
+        this.readTimer = null;
+      }
+
       try {
         const fullArticle = await api.getArticle(articleId);
         store.set("selectedArticle", fullArticle);
 
-        // Mark as read automatically when opened
+        // Delayed Auto Mark as Read Behavior
         if (fullArticle.is_unread) {
-          await api.updateArticleState(articleId, { is_unread: false });
-          fullArticle.is_unread = false;
-          const articles = store.get("articles");
-          const a = articles.find((item) => item.id === articleId);
-          if (a) a.is_unread = false;
-          store.set("articles", [...articles]);
+          const delaySec = store.get("readDelaySec") ?? 3;
+
+          const executeMarkRead = async () => {
+            try {
+              await api.updateArticleState(articleId, { is_unread: false });
+              fullArticle.is_unread = false;
+
+              const articles = store.get("articles") || [];
+              const a = articles.find((item) => item.id === articleId);
+              if (a) a.is_unread = false;
+              store.set("articles", [...articles]);
+
+              // Update feed counters
+              const feeds = store.get("feeds") || [];
+              const f = feeds.find((feed) => feed.id === fullArticle.feed_id);
+              if (f && f.unread_count > 0) {
+                f.unread_count = Math.max(0, f.unread_count - 1);
+                store.set("feeds", [...feeds]);
+              }
+            } catch (err) {
+              console.warn("Auto mark read failed:", err);
+            }
+          };
+
+          if (delaySec === 0) {
+            await executeMarkRead();
+          } else if (delaySec > 0) {
+            this.readTimer = setTimeout(executeMarkRead, delaySec * 1000);
+          }
+          // if delaySec === -1, manual only
         }
       } catch (err) {
         console.error("Failed to load article details:", err);
       }
     });
 
+    // Inline Scope Mark Read (from Tree item)
+    window.addEventListener("omnirss:mark-read-scope", async (e) => {
+      const { type, id } = e.detail;
+      try {
+        if (type === "feed") {
+          await api.markAllRead(parseInt(id, 10), null);
+        } else if (type === "category") {
+          const catId = id === "uncategorized" ? null : parseInt(id, 10);
+          await api.markAllRead(null, catId);
+        }
+        await this.reloadFeedsAndCounts();
+        await this.loadArticles();
+        window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "已標記為已讀", type: "success" } }));
+      } catch (err) {
+        alert(`標記失敗: ${err.message}`);
+      }
+    });
+
+    // Delete Feed event
+    window.addEventListener("omnirss:delete-feed", async (e) => {
+      try {
+        await api.deleteFeed(e.detail.id);
+        window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "已成功刪除訂閱來源", type: "success" } }));
+        await this.reloadFeedsAndCounts();
+        await this.loadArticles();
+      } catch (err) {
+        alert(`刪除來源失敗: ${err.message}`);
+      }
+    });
+
+    // Delete Category event
+    window.addEventListener("omnirss:delete-category", async (e) => {
+      try {
+        await api.deleteCategory(e.detail.id);
+        window.dispatchEvent(new CustomEvent("omnirss:toast", { detail: { message: "已成功刪除分類", type: "success" } }));
+        await this.reloadFeedsAndCounts();
+        await this.loadArticles();
+      } catch (err) {
+        alert(`刪除分類失敗: ${err.message}`);
+      }
+    });
+
     window.addEventListener("omnirss:filter-changed", () => {
+      this.updateMarkReadScopeLabel();
       this.loadArticles();
     });
 
@@ -287,6 +409,33 @@ class App {
       const userBadge = document.getElementById("user-status-name");
       if (userBadge) userBadge.textContent = me.username;
 
+      // Hydrate settings from user profile if available
+      if (me.settings && typeof me.settings === "object" && Object.keys(me.settings).length > 0) {
+        if (me.settings.theme) {
+          store.set("theme", me.settings.theme);
+          this.applyTheme(me.settings.theme);
+        }
+        if (me.settings.fontSize) {
+          store.set("fontSize", me.settings.fontSize);
+          this.applyFontSize(me.settings.fontSize);
+        }
+        if (me.settings.readDelaySec !== undefined) {
+          store.set("readDelaySec", me.settings.readDelaySec);
+        }
+        if (me.settings.hideEmptyFeeds !== undefined) {
+          store.set("hideEmptyFeeds", me.settings.hideEmptyFeeds);
+        }
+        if (me.settings.retentionDays !== undefined) {
+          store.set("retentionDays", me.settings.retentionDays);
+        }
+        if (me.settings.pollIntervalMinutes !== undefined) {
+          store.set("pollIntervalMinutes", me.settings.pollIntervalMinutes);
+        }
+        if (me.settings.imageVaultEnabled !== undefined) {
+          store.set("imageVaultEnabled", me.settings.imageVaultEnabled);
+        }
+      }
+
       await this.reloadFeedsAndCounts();
       await this.loadArticles();
     } catch (_) {
@@ -299,6 +448,7 @@ class App {
       const [cats, feeds] = await Promise.all([api.getCategories(), api.getFeeds()]);
       store.set("categories", cats || []);
       store.set("feeds", feeds || []);
+      this.updateMarkReadScopeLabel();
     } catch (err) {
       console.warn("Sync feeds error:", err);
     }
@@ -311,6 +461,8 @@ class App {
     const search = store.get("searchQuery");
     const quiet = store.get("quietMode");
 
+    store.set("listState", "loading");
+
     const params = {};
     if (search) params.search = search;
     if (filter === "unread" || quiet) params.is_unread = true;
@@ -322,6 +474,7 @@ class App {
     try {
       const articles = await api.getArticles(params);
       store.set("articles", articles || []);
+      store.set("listState", "ready");
       this.listView.sortArticles();
 
       // Auto select first article if none selected
@@ -330,6 +483,8 @@ class App {
       }
     } catch (err) {
       console.error("Load articles error:", err);
+      store.set("listState", "error");
+      store.set("listErrorMsg", err.message || "載入文章時發生錯誤");
     }
   }
 }

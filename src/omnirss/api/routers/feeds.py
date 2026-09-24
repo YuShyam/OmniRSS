@@ -121,6 +121,35 @@ async def get_feed_tree(
 # 分類目錄管理 (Category CRUD)
 # =============================================================================
 
+@router.get("/categories", response_model=list[CategoryDTO])
+async def list_categories(
+    user: dict = Depends(get_current_user),
+    conn: aiosqlite.Connection = Depends(get_db),
+) -> list[CategoryDTO]:
+    """取得當前使用者之所有分類目錄清單 (List Categories)."""
+    user_id = user["id"]
+    cur = await conn.execute(
+        """
+        SELECT id, name, sort_order, unread_count, custom_retention_days
+        FROM categories
+        WHERE user_id = ?
+        ORDER BY sort_order ASC, name ASC
+        """,
+        (user_id,),
+    )
+    rows = await cur.fetchall()
+    return [
+        CategoryDTO(
+            id=r["id"],
+            name=r["name"],
+            sort_order=r["sort_order"],
+            unread_count=r["unread_count"],
+            custom_retention_days=r["custom_retention_days"],
+        )
+        for r in rows
+    ]
+
+
 @router.post("/categories", response_model=CategoryDTO)
 async def create_category(
     req: CategoryCreateRequest,
@@ -213,6 +242,29 @@ async def delete_category(
 # 訂閱頻道管理 (Feeds CRUD)
 # =============================================================================
 
+@router.get("/feeds", response_model=list[dict])
+async def list_feeds(
+    user: dict = Depends(get_current_user),
+    conn: aiosqlite.Connection = Depends(get_db),
+) -> list[dict]:
+    """取得當前使用者之所有訂閱頻道清單 (List User Subscribed Feeds)."""
+    user_id = user["id"]
+    cur = await conn.execute(
+        """
+        SELECT f.id, COALESCE(uf.custom_title, f.title) as title,
+               f.feed_url, f.site_url, f.icon_hash, uf.unread_count,
+               f.error_count, f.last_error_message, f.last_checked_at, f.is_paused,
+               uf.category_id
+        FROM user_feeds uf
+        JOIN feeds f ON uf.feed_id = f.id
+        WHERE uf.user_id = ?
+        ORDER BY title ASC
+        """,
+        (user_id,),
+    )
+    rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
 @router.post("/feeds", response_model=dict)
 async def subscribe_feed(
     req: FeedCreateRequest,
@@ -235,7 +287,7 @@ async def subscribe_feed(
         # 初次訂閱：透過爬蟲安全探測一次
         crawler = CrawlerEngine()
         crawl_res = await crawler.fetch_feed(req.feed_url)
-        feed_title = req.title or (crawl_res.feed_metadata.title if crawl_res.feed_metadata else req.feed_url)
+        feed_title = req.custom_title or req.title or (crawl_res.feed_metadata.title if crawl_res.feed_metadata else req.feed_url)
         site_url = crawl_res.feed_metadata.site_url if crawl_res.feed_metadata else None
 
         c_cur = await conn.execute(
@@ -249,12 +301,13 @@ async def subscribe_feed(
 
     # 2. 建立 user_feeds 關聯
     try:
+        user_custom_title = req.custom_title or req.title
         await conn.execute(
             """
             INSERT INTO user_feeds (user_id, feed_id, category_id, custom_title, custom_retention_days)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, feed_id, req.category_id, req.title, req.custom_retention_days),
+            (user_id, feed_id, req.category_id, user_custom_title, req.custom_retention_days),
         )
         await conn.commit()
     except aiosqlite.IntegrityError:
@@ -358,10 +411,22 @@ async def refresh_single_feed(
             h = compute_entry_hash(feed_id, a.guid, a.url)
             await conn.execute(
                 """
-                INSERT OR IGNORE INTO articles_hot (feed_id, entry_hash, title, url, author, snippet, cover_image_url, published_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO articles_hot (
+                    feed_id, entry_hash, title, url, author, snippet, content_html, content_text, cover_image_url, published_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (feed_id, h, a.title, a.url, a.author, a.snippet, a.cover_image_url, a.published_at.strftime("%Y-%m-%d %H:%M:%S")),
+                (
+                    feed_id,
+                    h,
+                    a.title,
+                    a.url,
+                    a.author,
+                    a.snippet,
+                    a.content_html,
+                    a.content_text,
+                    a.cover_image_url,
+                    a.published_at.strftime("%Y-%m-%d %H:%M:%S"),
+                ),
             )
             # 取得文章 id
             a_cur = await conn.execute("SELECT id FROM articles_hot WHERE entry_hash = ?", (h,))
@@ -378,3 +443,70 @@ async def refresh_single_feed(
         "articles_found": len(res.articles),
         "message": "Feed refreshed successfully",
     }
+
+
+@router.post("/feeds/refresh-all")
+async def refresh_all_feeds(
+    user: dict = Depends(get_current_user),
+    conn: aiosqlite.Connection = Depends(get_db),
+) -> dict:
+    """手動強制立即更新該使用者之所有訂閱頻道 (Force Manual Refresh All Feeds)."""
+    user_id = user["id"]
+    cur = await conn.execute(
+        """
+        SELECT f.id, f.feed_url, f.etag_header, f.last_modified_header
+        FROM user_feeds uf
+        JOIN feeds f ON uf.feed_id = f.id
+        WHERE uf.user_id = ? AND f.is_paused = 0
+        """,
+        (user_id,),
+    )
+    feeds_rows = await cur.fetchall()
+
+    crawler = CrawlerEngine()
+    total_articles = 0
+
+    for f_row in feeds_rows:
+        try:
+            feed_id = f_row["id"]
+            res = await crawler.fetch_feed(
+                url=f_row["feed_url"],
+                etag=f_row["etag_header"],
+                last_modified=f_row["last_modified_header"],
+            )
+            if res.articles:
+                for a in res.articles:
+                    h = compute_entry_hash(feed_id, a.guid, a.url)
+                    await conn.execute(
+                        """
+                        INSERT OR IGNORE INTO articles_hot (
+                            feed_id, entry_hash, title, url, author, snippet, content_html, content_text, cover_image_url, published_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            feed_id,
+                            h,
+                            a.title,
+                            a.url,
+                            a.author,
+                            a.snippet,
+                            a.content_html,
+                            a.content_text,
+                            a.cover_image_url,
+                            a.published_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        ),
+                    )
+                    a_cur = await conn.execute("SELECT id FROM articles_hot WHERE entry_hash = ?", (h,))
+                    a_row = await a_cur.fetchone()
+                    if a_row:
+                        await conn.execute(
+                            "INSERT OR IGNORE INTO user_article_states (user_id, article_id, is_read) VALUES (?, ?, 0)",
+                            (user_id, a_row["id"]),
+                        )
+                total_articles += len(res.articles)
+        except Exception:
+            continue
+
+    await conn.commit()
+    return {"message": "All feeds refreshed successfully", "articles_found": total_articles}
+

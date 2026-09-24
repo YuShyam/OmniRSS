@@ -18,11 +18,52 @@ export class TreeView {
   initListeners() {
     store.subscribe("categories", () => this.render());
     store.subscribe("feeds", () => this.render());
+    store.subscribe("hideEmptyFeeds", () => this.render());
     store.subscribe("activeFilter", () => this.updateActiveHighlight());
     store.subscribe("activeCategoryId", () => this.updateActiveHighlight());
     store.subscribe("activeFeedId", () => this.updateActiveHighlight());
 
     this.container.addEventListener("click", (e) => {
+      // Inline Row Actions (Mark Read & Delete)
+      const actionBtn = e.target.closest(".tree-row-btn");
+      if (actionBtn) {
+        e.stopPropagation();
+        const action = actionBtn.dataset.action;
+        const targetType = actionBtn.dataset.targetType;
+        const targetId = actionBtn.dataset.targetId;
+        const targetName = actionBtn.dataset.targetName || "";
+
+        if (action === "mark-read") {
+          window.dispatchEvent(
+            new CustomEvent("omnirss:mark-read-scope", {
+              detail: { type: targetType, id: targetId },
+            })
+          );
+        } else if (action === "delete") {
+          if (targetType === "feed") {
+            const confirmMsg = t("tree.confirm_delete_feed").replace("{name}", targetName);
+            if (window.confirm(confirmMsg)) {
+              window.dispatchEvent(
+                new CustomEvent("omnirss:delete-feed", {
+                  detail: { id: parseInt(targetId, 10) },
+                })
+              );
+            }
+          } else if (targetType === "category") {
+            const confirmMsg = t("tree.confirm_delete_category").replace("{name}", targetName);
+            if (window.confirm(confirmMsg)) {
+              window.dispatchEvent(
+                new CustomEvent("omnirss:delete-category", {
+                  detail: { id: parseInt(targetId, 10) },
+                })
+              );
+            }
+          }
+        }
+        return;
+      }
+
+      // Toggle category fold/unfold
       const toggleBtn = e.target.closest(".category-toggle");
       if (toggleBtn) {
         e.stopPropagation();
@@ -36,7 +77,8 @@ export class TreeView {
         return;
       }
 
-      const itemEl = e.target.closest(".tree-item, .feed-item");
+      // Select folder/feed
+      const itemEl = e.target.closest(".tree-item, .category-item, .feed-item");
       if (!itemEl) return;
 
       const type = itemEl.dataset.type;
@@ -49,9 +91,10 @@ export class TreeView {
         });
         window.dispatchEvent(new CustomEvent("omnirss:filter-changed"));
       } else if (type === "category") {
+        const idVal = itemEl.dataset.id === "uncategorized" ? null : parseInt(itemEl.dataset.id, 10);
         store.update({
           activeFilter: "category",
-          activeCategoryId: parseInt(itemEl.dataset.id, 10),
+          activeCategoryId: idVal,
           activeFeedId: null,
           activeTag: null,
         });
@@ -68,26 +111,41 @@ export class TreeView {
     });
   }
 
+  toggleCollapseAll() {
+    const categories = store.get("categories") || [];
+    const hasAnyOpen = categories.some((c) => !this.collapsedCategories.has(String(c.id)));
+
+    if (hasAnyOpen) {
+      categories.forEach((c) => this.collapsedCategories.add(String(c.id)));
+      this.collapsedCategories.add("uncategorized");
+      store.set("allExpanded", false);
+    } else {
+      this.collapsedCategories.clear();
+      store.set("allExpanded", true);
+    }
+    this.render();
+  }
+
   render() {
     const categories = store.get("categories") || [];
     const feeds = store.get("feeds") || [];
+    const hideEmpty = store.get("hideEmptyFeeds");
 
     // Calculate unread statistics
     let totalUnread = 0;
-    let totalStarred = 0;
     const catUnreadMap = {};
 
     feeds.forEach((f) => {
       const unread = f.unread_count || 0;
       totalUnread += unread;
-      const catId = f.category_id || "uncategorized";
+      const catId = f.category_id ? String(f.category_id) : "uncategorized";
       catUnreadMap[catId] = (catUnreadMap[catId] || 0) + unread;
     });
 
     // Group feeds by category
     const feedsByCat = {};
     feeds.forEach((f) => {
-      const catId = f.category_id || "uncategorized";
+      const catId = f.category_id ? String(f.category_id) : "uncategorized";
       if (!feedsByCat[catId]) feedsByCat[catId] = [];
       feedsByCat[catId].push(f);
     });
@@ -100,7 +158,7 @@ export class TreeView {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
           </span>
           <span class="tree-label">${t("nav.all_feeds")}</span>
-          <span class="tree-count ${totalUnread > 0 ? "has-unread" : ""}">${totalUnread}</span>
+          ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : ""}
         </div>
 
         <div class="tree-item" data-type="filter" data-filter="unread">
@@ -108,7 +166,7 @@ export class TreeView {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </span>
           <span class="tree-label">${t("nav.unread")}</span>
-          <span class="tree-count ${totalUnread > 0 ? "has-unread" : ""}">${totalUnread}</span>
+          ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : ""}
         </div>
 
         <div class="tree-item" data-type="filter" data-filter="starred">
@@ -134,8 +192,13 @@ export class TreeView {
     categories.forEach((cat) => {
       const catId = String(cat.id);
       const isCollapsed = this.collapsedCategories.has(catId);
-      const catFeeds = feedsByCat[cat.id] || [];
-      const catUnread = catUnreadMap[cat.id] || 0;
+      let catFeeds = feedsByCat[cat.id] || [];
+      const catUnread = catUnreadMap[catId] || 0;
+
+      if (hideEmpty) {
+        catFeeds = catFeeds.filter((f) => (f.unread_count || 0) > 0);
+        if (catFeeds.length === 0 && catUnread === 0) return;
+      }
 
       html += `
         <div class="category-block">
@@ -147,7 +210,17 @@ export class TreeView {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
             </span>
             <span class="tree-label">${this.escape(cat.name)}</span>
-            ${catUnread > 0 ? `<span class="tree-count has-unread">${catUnread}</span>` : ""}
+            ${catUnread > 0 ? `<span class="tree-count has-unread">(${catUnread})</span>` : ""}
+            <div class="tree-row-actions">
+              ${catUnread > 0 ? `
+                <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="${cat.id}" title="${t("tree.mark_node_read")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              ` : ""}
+              <button class="tree-row-btn btn-delete" data-action="delete" data-target-type="category" data-target-id="${cat.id}" data-target-name="${this.escape(cat.name)}" title="${t("tree.delete_category")}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </div>
           </div>
 
           ${
@@ -164,10 +237,15 @@ export class TreeView {
     });
 
     // Uncategorized Feeds
-    const uncatFeeds = feedsByCat["uncategorized"] || [];
-    if (uncatFeeds.length > 0) {
+    let uncatFeeds = feedsByCat["uncategorized"] || [];
+    const uncatUnread = catUnreadMap["uncategorized"] || 0;
+
+    if (hideEmpty) {
+      uncatFeeds = uncatFeeds.filter((f) => (f.unread_count || 0) > 0);
+    }
+
+    if (uncatFeeds.length > 0 || (!hideEmpty && feedsByCat["uncategorized"] && feedsByCat["uncategorized"].length > 0)) {
       const isCollapsed = this.collapsedCategories.has("uncategorized");
-      const uncatUnread = catUnreadMap["uncategorized"] || 0;
       html += `
         <div class="category-block">
           <div class="category-item" data-type="category" data-id="uncategorized">
@@ -175,7 +253,14 @@ export class TreeView {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
             <span class="tree-label">${t("tree.uncategorized")}</span>
-            ${uncatUnread > 0 ? `<span class="tree-count has-unread">${uncatUnread}</span>` : ""}
+            ${uncatUnread > 0 ? `<span class="tree-count has-unread">(${uncatUnread})</span>` : ""}
+            <div class="tree-row-actions">
+              ${uncatUnread > 0 ? `
+                <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="uncategorized" title="${t("tree.mark_node_read")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              ` : ""}
+            </div>
           </div>
           ${
             !isCollapsed
@@ -198,6 +283,15 @@ export class TreeView {
   renderFeedItem(feed) {
     const unread = feed.unread_count || 0;
     const initial = (feed.title || "R").charAt(0).toUpperCase();
+    const errorCount = feed.error_count || 0;
+    const lastError = feed.last_error_message || "連線異常";
+
+    let errorBadge = "";
+    if (errorCount >= 10) {
+      errorBadge = `<span class="feed-error-badge dead" style="font-size: 11px; margin-left: 4px; cursor: help;" title="連線失效 (連續失敗 ${errorCount} 次): ${this.escape(lastError)}">💀</span>`;
+    } else if (errorCount >= 3) {
+      errorBadge = `<span class="feed-error-badge warning" style="font-size: 11px; margin-left: 4px; cursor: help;" title="連線警告 (連續失敗 ${errorCount} 次): ${this.escape(lastError)}">⚠️</span>`;
+    }
 
     return `
       <div class="feed-item" data-type="feed" data-id="${feed.id}">
@@ -207,7 +301,18 @@ export class TreeView {
             : `<span class="feed-favicon-fallback">${initial}</span>`
         }
         <span class="tree-label">${this.escape(feed.title || feed.feed_url)}</span>
-        ${unread > 0 ? `<span class="tree-count has-unread">${unread}</span>` : ""}
+        ${errorBadge}
+        ${unread > 0 ? `<span class="tree-count has-unread">(${unread})</span>` : ""}
+        <div class="tree-row-actions">
+          ${unread > 0 ? `
+            <button class="tree-row-btn" data-action="mark-read" data-target-type="feed" data-target-id="${feed.id}" title="${t("tree.mark_node_read")}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          ` : ""}
+          <button class="tree-row-btn btn-delete" data-action="delete" data-target-type="feed" data-target-id="${feed.id}" data-target-name="${this.escape(feed.title || feed.feed_url)}" title="${t("tree.delete_feed")}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
       </div>
     `;
   }
@@ -224,8 +329,9 @@ export class TreeView {
     if (activeFilter === "feed" && activeFeedId) {
       const feedEl = this.container.querySelector(`.feed-item[data-id="${activeFeedId}"]`);
       if (feedEl) feedEl.classList.add("active");
-    } else if (activeFilter === "category" && activeCategoryId) {
-      const catEl = this.container.querySelector(`.category-item[data-id="${activeCategoryId}"]`);
+    } else if (activeFilter === "category") {
+      const catVal = activeCategoryId === null ? "uncategorized" : activeCategoryId;
+      const catEl = this.container.querySelector(`.category-item[data-id="${catVal}"]`);
       if (catEl) catEl.classList.add("active");
     } else {
       const filterEl = this.container.querySelector(`.tree-item[data-filter="${activeFilter}"]`);

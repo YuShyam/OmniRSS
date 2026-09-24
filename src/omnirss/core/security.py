@@ -460,12 +460,12 @@ def get_security_headers() -> dict[str, str]:
     return {
         "Content-Security-Policy": (
             "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
             "font-src 'self' https://fonts.gstatic.com data:; "
-            "img-src * data:; "
-            "media-src *; "
-            "connect-src 'self'; "
+            "img-src * data: https: blob:; "
+            "media-src * data: blob:; "
+            "connect-src 'self' https:; "
             "frame-src 'none'; "
             "object-src 'none';"
         ),

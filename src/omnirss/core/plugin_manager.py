@@ -55,6 +55,10 @@ class PluginManager:
         """已成功載入之資訊清單字典 (Dictionary of loaded manifests)."""
         return self._manifests
 
+    def list_manifests(self) -> dict[str, PluginManifest]:
+        """列出所有已載入之外掛資訊清單 (List loaded plugin manifests)."""
+        return self._manifests
+
     def set_global_config(self, plugin_id: str, config: dict[str, Any]) -> None:
         """設定全域外掛偏好設定 (Set global plugin config).
 

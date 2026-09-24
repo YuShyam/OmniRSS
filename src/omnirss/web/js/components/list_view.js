@@ -2,7 +2,8 @@
  * OmniRSS 24px 極限緊湊文章列表元件 (List View Component).
  *
  * Implements QuiteRSS 24px single-line zero-wrap table, sortable column headers,
- * read/unread indicator, star toggling, and fast DOM rendering.
+ * read/unread indicator, star toggling, 4-state visual indicators (Skeleton, Empty, Error),
+ * and fast DOM rendering.
  */
 
 import { store } from "../state.js";
@@ -13,11 +14,13 @@ export class ListView {
   constructor(headerEl, bodyEl) {
     this.headerEl = headerEl;
     this.bodyEl = bodyEl;
+    this.renderHeaders();
     this.initListeners();
   }
 
   initListeners() {
     store.subscribe("articles", () => this.render());
+    store.subscribe("listState", () => this.render());
     store.subscribe("columns", () => {
       this.renderHeaders();
       this.render();
@@ -46,8 +49,20 @@ export class ListView {
       this.sortArticles();
     });
 
-    // Row selection and star click
+    // Row selection, star click, or state card button click
     this.bodyEl.addEventListener("click", async (e) => {
+      const retryBtn = e.target.closest("#btn-state-retry");
+      if (retryBtn) {
+        window.dispatchEvent(new CustomEvent("omnirss:filter-changed"));
+        return;
+      }
+
+      const addFeedBtn = e.target.closest("#btn-state-add-feed");
+      if (addFeedBtn) {
+        window.dispatchEvent(new CustomEvent("omnirss:open-modal", { detail: { modalId: "modal-add-feed" } }));
+        return;
+      }
+
       const starBtn = e.target.closest(".star-btn");
       if (starBtn) {
         e.stopPropagation();
@@ -59,7 +74,7 @@ export class ListView {
         await api.updateArticleState(articleId, { is_starred: !isStarred });
         starBtn.classList.toggle("starred", !isStarred);
 
-        const articles = store.get("articles");
+        const articles = store.get("articles") || [];
         const targetArt = articles.find((a) => a.id === articleId);
         if (targetArt) targetArt.is_starred = !isStarred;
         return;
@@ -117,24 +132,93 @@ export class ListView {
     store.set("articles", articles);
   }
 
-  render() {
-    const articles = store.get("articles") || [];
-    const cols = store.get("columns");
-    const selectedId = store.get("selectedArticleId");
+  renderSkeleton() {
+    const rows = Array.from({ length: 6 })
+      .map(
+        () => `
+      <div class="skeleton-row">
+        <div class="skeleton-block" style="width: 14px; height: 14px; border-radius: 50%;"></div>
+        <div class="skeleton-block" style="width: 14px; height: 14px;"></div>
+        <div class="skeleton-block" style="flex: 1; max-width: 45%;"></div>
+        <div class="skeleton-block" style="width: 120px;"></div>
+        <div class="skeleton-block" style="width: 80px;"></div>
+      </div>
+    `
+      )
+      .join("");
+    this.bodyEl.innerHTML = rows;
+  }
 
-    if (articles.length === 0) {
+  render() {
+    const state = store.get("listState") || "ready";
+    const articles = store.get("articles") || [];
+    const feeds = store.get("feeds") || [];
+    const activeFilter = store.get("activeFilter");
+    const selectedId = store.get("selectedArticleId");
+    const cols = store.get("columns");
+
+    // 1. Loading State
+    if (state === "loading") {
+      this.renderSkeleton();
+      return;
+    }
+
+    // 2. Error State
+    if (state === "error") {
+      const errorMsg = store.get("listErrorMsg") || t("error.title");
       this.bodyEl.innerHTML = `
-        <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          <div>尚無文章或當前視圖為空</div>
+        <div class="state-card">
+          <div class="state-card-icon error">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <div class="state-card-title">${errorMsg}</div>
+          <button class="state-card-btn" id="btn-state-retry">${t("error.retry_btn")}</button>
         </div>
       `;
       return;
     }
 
+    // 3. Empty States
+    if (articles.length === 0) {
+      if (feeds.length === 0) {
+        this.bodyEl.innerHTML = `
+          <div class="state-card">
+            <div class="state-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+            </div>
+            <div class="state-card-title">${t("empty.no_feeds_title")}</div>
+            <div class="state-card-desc">${t("empty.no_feeds_desc")}</div>
+            <button class="state-card-btn" id="btn-state-add-feed">${t("tree.add_feed")}</button>
+          </div>
+        `;
+      } else if (activeFilter === "unread") {
+        this.bodyEl.innerHTML = `
+          <div class="state-card">
+            <div class="state-card-icon success">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <div class="state-card-title">${t("empty.unread_title")}</div>
+            <div class="state-card-desc">${t("empty.unread_desc")}</div>
+          </div>
+        `;
+      } else {
+        this.bodyEl.innerHTML = `
+          <div class="state-card">
+            <div class="state-card-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            </div>
+            <div class="state-card-title">${t("empty.feed_title")}</div>
+            <div class="state-card-desc">${t("empty.feed_desc")}</div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    // 4. Normal Rows Rendering
     const html = articles.map((art) => {
       const isSelected = art.id === selectedId;
-      const isUnread = art.is_unread !== false;
+      const isUnread = art.is_read === false || art.is_read === 0 || art.is_unread === true;
       const isStarred = art.is_starred === true;
       const formattedDate = this.formatDate(art.published_at);
 
@@ -175,7 +259,6 @@ export class ListView {
       const isSelected = id === selectedId;
       row.classList.toggle("selected", isSelected);
       if (isSelected) {
-        // Scroll into view if needed
         row.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }
     });
@@ -186,11 +269,30 @@ export class ListView {
     try {
       const d = new Date(dateStr);
       const now = new Date();
-      const isToday = d.toDateString() === now.toDateString();
-      if (isToday) {
-        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const formatMode = store.get("dateFormat") || "smart";
+
+      if (formatMode === "iso") {
+        return d.toISOString().replace("T", " ").substring(0, 19);
       }
-      return `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      if (formatMode === "relative") {
+        const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+        if (diffSec < 60) return "剛剛";
+        if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分鐘前`;
+        if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小時前`;
+        if (diffSec < 2592000) return `${Math.floor(diffSec / 86400)} 天前`;
+      }
+
+      // 智慧跨年格式 (Smart format)
+      const isToday = d.toDateString() === now.toDateString();
+      const timePart = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (isToday) {
+        return timePart;
+      }
+      const isCurrentYear = d.getFullYear() === now.getFullYear();
+      if (isCurrentYear) {
+        return `${d.getMonth() + 1}/${d.getDate()} ${timePart}`;
+      }
+      return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${timePart}`;
     } catch (_) {
       return dateStr;
     }

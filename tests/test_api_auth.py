@@ -45,10 +45,32 @@ async def test_auth_login_and_me(tmp_path):
         assert key_res.status_code == 200
         assert "api_key" in key_res.json()
 
-        # 5. 登出清除 Session Cookie
+        # 5. 測試使用者設定讀取與更新 (GET/PUT /api/user/settings)
+        settings_res = await ac.get("/api/user/settings", headers=headers)
+        assert settings_res.status_code == 200
+        assert "settings" in settings_res.json()
+
+        update_settings = await ac.put(
+            "/api/user/settings",
+            json={"settings": {"theme": "midnight", "retentionDays": 90, "fontSize": "large"}},
+            headers=headers,
+        )
+        assert update_settings.status_code == 200
+        saved_settings = update_settings.json()["settings"]
+        assert saved_settings["theme"] == "midnight"
+        assert saved_settings["retentionDays"] == 90
+        assert saved_settings["fontSize"] == "large"
+
+        # 再次查詢確認持久化
+        check_settings = await ac.get("/api/user/settings", headers=headers)
+        assert check_settings.status_code == 200
+        assert check_settings.json()["settings"]["theme"] == "midnight"
+
+        # 6. 登出清除 Session Cookie
         logout_res = await ac.post("/api/auth/logout")
         assert logout_res.status_code == 200
 
-        # 6. 測試未帶 Token 請求應回傳 401
+        # 7. 測試未帶 Token 請求應回傳 401
         unauth_res = await ac.get("/api/auth/me")
         assert unauth_res.status_code == 401
+

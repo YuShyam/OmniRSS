@@ -48,6 +48,19 @@ class UserDTO(BaseModel):
     created_at: datetime
 
 
+class UserSettingsDTO(BaseModel):
+    """用戶偏好設定模型 (User Settings DTO)."""
+
+    settings: dict[str, Any] = Field(default_factory=dict, description="用戶偏好與介面狀態設定")
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """更新用戶偏好設定請求 (Update User Settings Request)."""
+
+    settings: dict[str, Any] = Field(description="用戶偏好設定字典")
+
+
+
 # =============================================================================
 # 2. 分類與訂閱源相關模型 (Categories & Feeds Models)
 # =============================================================================
@@ -83,6 +96,7 @@ class FeedCreateRequest(BaseModel):
 
     feed_url: str = Field(description="訂閱源網址 (RSS/Atom URL)")
     title: Optional[str] = Field(default=None, description="自訂頻道別名")
+    custom_title: Optional[str] = Field(default=None, description="自訂頻道別名 (前端別名)")
     category_id: Optional[int] = Field(default=None, description="所屬分類 ID")
     check_interval_minutes: int = Field(default=30, ge=5, le=1440, description="抓取間隔分鐘數")
     custom_retention_days: Optional[int] = Field(default=None, ge=0, description="自訂保留天數")
@@ -187,7 +201,7 @@ class RuleCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="規則名稱")
     sort_order: int = Field(default=0, description="優先權排序")
     is_enabled: bool = Field(default=True, description="是否啟用")
-    conditions: list[dict[str, Any]] = Field(description="比對條件清單")
+    conditions: list[dict[str, Any]] | dict[str, Any] = Field(description="比對條件清單或物件")
     actions: list[dict[str, Any]] = Field(description="執行動作清單")
 
 
@@ -197,7 +211,7 @@ class RuleUpdateRequest(BaseModel):
     name: Optional[str] = None
     sort_order: Optional[int] = None
     is_enabled: Optional[bool] = None
-    conditions: Optional[list[dict[str, Any]]] = None
+    conditions: Optional[list[dict[str, Any]] | dict[str, Any]] = None
     actions: Optional[list[dict[str, Any]]] = None
 
 
@@ -208,7 +222,7 @@ class RuleResponseDTO(BaseModel):
     name: str
     sort_order: int
     is_enabled: bool
-    conditions: list[dict[str, Any]]
+    conditions: list[dict[str, Any]] | dict[str, Any]
     actions: list[dict[str, Any]]
     hit_count: int
     created_at: datetime

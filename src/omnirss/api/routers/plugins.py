@@ -21,7 +21,7 @@ async def list_plugins(
 ) -> list[PluginTelemetryDTO]:
     """取得所有外掛清單與即時遙測數據 (List Plugins and Telemetry Metrics)."""
     mgr = get_plugin_manager()
-    manifests = mgr.list_manifests()
+    manifests = mgr.loaded_manifests if hasattr(mgr, "loaded_manifests") else (mgr.list_manifests() if hasattr(mgr, "list_manifests") else {})
 
     cur = await conn.execute(
         """

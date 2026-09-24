@@ -14,6 +14,12 @@ class StateStore {
       lang: localStorage.getItem("omnirss_lang") || "zh-TW",
       quietMode: localStorage.getItem("omnirss_quiet_mode") === "true",
 
+      // Reading Behavior & Preferences
+      readDelaySec: parseInt(localStorage.getItem("omnirss_read_delay") || "3", 10),
+      hideEmptyFeeds: localStorage.getItem("omnirss_hide_empty_feeds") === "true",
+      allExpanded: localStorage.getItem("omnirss_all_expanded") !== "false",
+      fontSize: localStorage.getItem("omnirss_font_size") || "medium",
+
       // Navigation & Selections
       activeFilter: "all", // "all", "unread", "starred", "trash", "category", "feed", "tag"
       activeCategoryId: null,
@@ -27,6 +33,10 @@ class StateStore {
       articles: [],
       selectedArticleId: null,
       selectedArticle: null,
+
+      // 4-State Visual Indicators ("loading" | "ready" | "empty_unread" | "empty_feed" | "error")
+      listState: "ready",
+      listErrorMsg: "",
 
       // List View Options
       sortField: "published_at",
@@ -69,6 +79,10 @@ class StateStore {
       else localStorage.removeItem("omnirss_token");
     }
     if (key === "quietMode") localStorage.setItem("omnirss_quiet_mode", String(value));
+    if (key === "readDelaySec") localStorage.setItem("omnirss_read_delay", String(value));
+    if (key === "hideEmptyFeeds") localStorage.setItem("omnirss_hide_empty_feeds", String(value));
+    if (key === "allExpanded") localStorage.setItem("omnirss_all_expanded", String(value));
+    if (key === "fontSize") localStorage.setItem("omnirss_font_size", String(value));
     if (key === "columns") localStorage.setItem("omnirss_columns", JSON.stringify(value));
     if (key === "treeWidth") localStorage.setItem("omnirss_tree_width", String(value));
     if (key === "listHeight") localStorage.setItem("omnirss_list_height", String(value));

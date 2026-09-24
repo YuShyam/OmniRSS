@@ -117,7 +117,11 @@ async def import_opml(
         imported_count += 1
 
     await conn.commit()
-    return {"imported_count": imported_count, "message": "OPML imported successfully"}
+    return {
+        "imported_count": imported_count,
+        "imported_feeds": imported_count,
+        "message": "OPML imported successfully",
+    }
 
 
 @router.get("/user/backup")
