@@ -149,3 +149,25 @@ def test_raw_image_url_conversion():
     articles, _ = crawler.parse_feed_content(feed_with_image, "https://photo.example.com/rss")
     assert len(articles) == 1
     assert "<img src=\"https://photo.example.com/images/sunset.jpg\"" in articles[0].content_html
+
+
+def test_decode_chunked_data():
+    """測試 Chunked 傳輸解碼 (Test chunked transfer decoding)."""
+    crawler = CrawlerEngine()
+    chunked = b"4\r\nWiki\r\n5\r\npedia\r\ne\r\n in \r\n\r\nchunks\r\n0\r\n\r\n"
+    decoded = crawler._decode_chunked(chunked)
+    assert decoded == b"Wikipedia in \r\n\r\nchunks"
+
+
+def test_scheduler_per_host_semaphore():
+    """測試排程器針對不同 Host 分配專屬 Semaphore (Test per-host semaphore isolation)."""
+    from omnirss.core.scheduler import OmniScheduler
+    scheduler = OmniScheduler()
+    sem_ptt1 = scheduler._get_host_semaphore("https://www.ptt.cc/atom/Gossiping.xml")
+    sem_ptt2 = scheduler._get_host_semaphore("https://www.ptt.cc/atom/Stock.xml")
+    sem_yahoo = scheduler._get_host_semaphore("https://tw.news.yahoo.com/rss")
+
+    assert sem_ptt1 is sem_ptt2
+    assert sem_ptt1 is not sem_yahoo
+    assert sem_ptt1._value == 3
+    assert sem_yahoo._value == 5

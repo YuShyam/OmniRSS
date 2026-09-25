@@ -8,7 +8,7 @@ from datetime import timedelta
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from omnirss.api.dependencies import get_current_user, get_db
+from omnirss.api.dependencies import get_current_user, get_db, get_write_db
 from omnirss.api.schemas import (
     LoginRequest,
     TokenResponse,
@@ -27,7 +27,7 @@ user_router = APIRouter(prefix="/api/user", tags=["User"])
 @router.post("/setup", response_model=UserDTO)
 async def setup_initial_admin(
     req: UserSetupRequest,
-    conn: aiosqlite.Connection = Depends(get_db),
+    conn: aiosqlite.Connection = Depends(get_write_db),
 ) -> UserDTO:
     """首次啟動建立系統管理員 (Initial Admin Setup)."""
     cursor = await conn.execute("SELECT COUNT(*) as count FROM users")
@@ -50,6 +50,21 @@ async def setup_initial_admin(
     )
     await conn.commit()
     user_id = cur.lastrowid
+
+    # 種植 QuiteRSS 經典 5 組標籤
+    await conn.execute(
+        """
+        INSERT OR IGNORE INTO tags (user_id, name, color_hex, sort_order)
+        VALUES 
+            (?, '重要', '#ef4444', 1),
+            (?, '工作', '#f97316', 2),
+            (?, '個人', '#10b981', 3),
+            (?, '待讀', '#3b82f6', 4),
+            (?, '稍後閱讀', '#8b5cf6', 5)
+        """,
+        (user_id, user_id, user_id, user_id, user_id),
+    )
+    await conn.commit()
 
     from datetime import datetime, timezone
 
@@ -135,7 +150,7 @@ async def get_me(user: dict = Depends(get_current_user)) -> UserDTO:
 @router.post("/regenerate-key", response_model=dict)
 async def regenerate_api_key(
     user: dict = Depends(get_current_user),
-    conn: aiosqlite.Connection = Depends(get_db),
+    conn: aiosqlite.Connection = Depends(get_write_db),
 ) -> dict:
     """重新生成專屬 API Key (Regenerate User API Key)."""
     new_key = TokenManager.generate_api_key()
@@ -164,7 +179,7 @@ async def get_user_settings(
 async def update_user_settings(
     req: UserSettingsUpdateRequest,
     user: dict = Depends(get_current_user),
-    conn: aiosqlite.Connection = Depends(get_db),
+    conn: aiosqlite.Connection = Depends(get_write_db),
 ) -> UserSettingsDTO:
     """更新當前使用者偏好設定 (Update Current User Settings)."""
     existing: dict = {}

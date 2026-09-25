@@ -73,6 +73,25 @@ class CategoryDTO(BaseModel):
     sort_order: int = 0
     unread_count: int = 0
     custom_retention_days: Optional[int] = None
+    custom_interval_minutes: Optional[int] = None
+    custom_min_date: Optional[str] = None
+    force_min_date: bool = False
+    is_paused: bool = False
+    filter_rules: Optional[str] = None
+    view_preferences: Optional[dict[str, Any]] = None
+
+
+class CategoryStatsDTO(BaseModel):
+    """分類即時健康度與統計模型 (Category Real-time Stats DTO)."""
+
+    category_id: int
+    name: str
+    feed_count: int = 0
+    article_count: int = 0
+    unread_count: int = 0
+    custom_interval_minutes: Optional[int] = None
+    last_updated_at: Optional[str] = None
+    is_paused: bool = False
 
 
 class CategoryCreateRequest(BaseModel):
@@ -81,6 +100,9 @@ class CategoryCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="分類名稱")
     sort_order: int = Field(default=0, description="排序權重")
     custom_retention_days: Optional[int] = Field(default=None, ge=0, description="自訂保留天數")
+    custom_interval_minutes: Optional[int] = Field(default=None, ge=5, le=10080, description="分類專屬更新頻率 (分鐘)")
+    custom_min_date: Optional[str] = Field(default=None, description="文章收錄起始時間 (YYYY-MM-DD 或 ISO 格式)")
+    force_min_date: bool = Field(default=False, description="是否強制向下套用至該分類下所有來源")
 
 
 class CategoryUpdateRequest(BaseModel):
@@ -89,6 +111,45 @@ class CategoryUpdateRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     sort_order: Optional[int] = None
     custom_retention_days: Optional[int] = None
+    custom_interval_minutes: Optional[int] = None
+    custom_min_date: Optional[str] = None
+    force_min_date: Optional[bool] = None
+    is_paused: Optional[bool] = None
+    filter_rules: Optional[str] = None
+    view_preferences: Optional[dict[str, Any]] = None
+
+
+class RefreshProgressDTO(BaseModel):
+    """即時全量更新進度模型 (Real-time Refresh Progress DTO)."""
+
+    is_running: bool = False
+    total_feeds: int = 0
+    completed_feeds: int = 0
+    current_feed_name: Optional[str] = None
+    new_articles_count: int = 0
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+
+class FeedTestRequest(BaseModel):
+    """測試訂閱網址請求 (Test Feed URL Request)."""
+
+    feed_url: str = Field(description="欲測試的 RSS/Atom 網址")
+    requires_flaresolverr: bool = Field(default=False, description="是否透過 FlareSolverr 測試")
+    auth_username: Optional[str] = Field(default=None, description="HTTP 認證帳號")
+    auth_password: Optional[str] = Field(default=None, description="HTTP 認證密碼")
+
+
+class FeedTestResponse(BaseModel):
+    """測試訂閱網址回應 (Test Feed URL Response)."""
+
+    status: str = Field(description="測試結果狀態 ('ok' | 'error')")
+    http_status: Optional[int] = Field(default=None, description="HTTP 狀態碼")
+    title: Optional[str] = Field(default=None, description="解析所得頻道名稱")
+    site_url: Optional[str] = Field(default=None, description="解析所得官方首頁")
+    item_count: int = Field(default=0, description="目前 Feed 內包含的文章數量")
+    error_detail: Optional[str] = Field(default=None, description="錯誤詳細訊息")
 
 
 class FeedCreateRequest(BaseModel):
@@ -100,7 +161,12 @@ class FeedCreateRequest(BaseModel):
     category_id: Optional[int] = Field(default=None, description="所屬分類 ID")
     check_interval_minutes: int = Field(default=30, ge=5, le=1440, description="抓取間隔分鐘數")
     custom_retention_days: Optional[int] = Field(default=None, ge=0, description="自訂保留天數")
+    min_publish_date: Optional[str] = Field(default=None, description="文章收錄起始時間 (YYYY-MM-DD 或 ISO 格式)")
+    force_min_date: bool = Field(default=False, description="是否強制依此來源（特許穿透全域與分類限制）")
     requires_flaresolverr: bool = Field(default=False, description="是否強制調度 FlareSolverr 繞過 Cloudflare")
+    auto_full_text: bool = Field(default=False, description="是否自動抓取全文與展開推文/圖片")
+    auth_username: Optional[str] = Field(default=None, description="HTTP 認證帳號")
+    auth_password: Optional[str] = Field(default=None, description="HTTP 認證密碼")
 
 
 class FeedUpdateRequest(BaseModel):
@@ -108,10 +174,18 @@ class FeedUpdateRequest(BaseModel):
 
     custom_title: Optional[str] = None
     category_id: Optional[int] = None
+    feed_url: Optional[str] = None
+    site_url: Optional[str] = None
     check_interval_minutes: Optional[int] = Field(default=None, ge=5, le=1440)
     custom_retention_days: Optional[int] = None
+    min_publish_date: Optional[str] = None
+    force_min_date: Optional[bool] = None
     is_paused: Optional[bool] = None
     requires_flaresolverr: Optional[bool] = None
+    auto_full_text: Optional[bool] = None
+    auth_username: Optional[str] = None
+    auth_password: Optional[str] = None
+
 
 
 
@@ -128,6 +202,9 @@ class FeedTreeItemDTO(BaseModel):
     last_error_message: Optional[str] = None
     last_checked_at: Optional[datetime] = None
     is_paused: bool = False
+    auto_full_text: bool = False
+    min_publish_date: Optional[str] = None
+    force_min_date: bool = False
 
 
 class FeedTreeCategoryDTO(BaseModel):
@@ -141,9 +218,12 @@ class FeedTreeCategoryDTO(BaseModel):
 
 
 class FeedTreeResponseDTO(BaseModel):
-    """完整階層式訂閱樹回應 (Hierarchical Feed Tree Response)."""
+    """完整階層式訂閱樹回應 (Hierarchical Feed Tree Response with Global Stats)."""
 
-    total_unread: int
+    total_unread: int = 0
+    total_articles: int = 0
+    starred_count: int = 0
+    trash_count: int = 0
     categories: list[FeedTreeCategoryDTO] = Field(default_factory=list)
 
 
@@ -168,7 +248,7 @@ class ArticleListItemDTO(BaseModel):
     is_read: bool
     is_unread: bool = False
     is_starred: bool
-    tags: list[str] = Field(default_factory=list)
+    tags: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ArticleDetailDTO(ArticleListItemDTO):
@@ -287,3 +367,57 @@ class PluginConfigUpdateRequest(BaseModel):
     """更新外掛私有設定請求 (Update Plugin Private Config)."""
 
     config: dict[str, Any] = Field(description="外掛私有配置字典")
+
+
+# =============================================================================
+# 7. 標籤與色票模型 (Tags & Labels Models - QuiteRSS Alignment)
+# =============================================================================
+
+class TagDTO(BaseModel):
+    """標籤資料傳輸模型 (Tag DTO)."""
+
+    id: int
+    name: str
+    color_hex: str = "#3b82f6"
+    sort_order: int = 0
+    unread_count: int = 0
+    article_count: int = 0
+    created_at: Optional[datetime] = None
+
+
+class TagCreateRequest(BaseModel):
+    """建立標籤請求 (Create Tag Request)."""
+
+    name: str = Field(min_length=1, max_length=50, description="標籤名稱")
+    color_hex: str = Field(default="#3b82f6", max_length=20, description="16 進位色票碼")
+    sort_order: int = Field(default=0, description="排序權重")
+
+
+class TagUpdateRequest(BaseModel):
+    """更新標籤請求 (Update Tag Request)."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    color_hex: Optional[str] = Field(default=None, max_length=20)
+    sort_order: Optional[int] = None
+
+
+class ArticleTagBindingRequest(BaseModel):
+    """文章標籤綁定請求 (Article Tag Binding Request)."""
+
+    tag_ids: list[int] = Field(description="標籤 ID 清單")
+
+
+class ArticleTagToggleRequest(BaseModel):
+    """文章單一標籤切換請求 (Article Tag Toggle Request)."""
+
+    tag_id: int = Field(description="標籤 ID")
+    action: Optional[str] = Field(default="toggle", description="'toggle', 'add', 或 'remove'")
+
+
+class BatchArticleTagRequest(BaseModel):
+    """批次文章標籤操作請求 (Batch Article Tag Request)."""
+
+    article_ids: list[int] = Field(description="文章 ID 清單")
+    tag_id: int = Field(description="標籤 ID")
+    action: str = Field(default="add", description="'add', 'remove', 或 'toggle'")
+

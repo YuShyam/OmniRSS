@@ -95,7 +95,7 @@
 
 ### 3.1 認證、依賴與錯誤處理 (`omnirss/api/`)
 - [x] `dependencies.py`：JWT 登入認證、`X-API-Key` 鑑權（常數時間比對 `hmac.compare_digest`）、Rate Limiter（5 次失敗鎖定 15 分鐘）
-- [x] `schemas.py`：嚴格對齊 [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) 的 Pydantic v2 DTO
+- [x] `schemas.py`：嚴格對齊 [`docs/API_CONTRACT.md`](API_CONTRACT.md) 的 Pydantic v2 DTO
 - [x] 實作 RFC 7807 錯誤處理中介軟體
 
 ### 3.2 領域路由模組分拆 (`omnirss/api/routers/`)

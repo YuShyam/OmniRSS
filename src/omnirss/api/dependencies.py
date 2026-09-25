@@ -25,6 +25,17 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield conn
 
 
+async def get_write_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+    """寫入交易資料庫連線依賴注入 (Exclusive write transaction dependency injection).
+
+    :yield: aiosqlite 連線實例
+    """
+    db_mgr = get_db_manager()
+    async with db_mgr.write_transaction() as conn:
+        yield conn
+
+
+
 async def get_current_user(
     auth_header: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
     session_token: Optional[str] = Cookie(default=None, alias="session_token"),
@@ -100,7 +111,7 @@ async def get_current_admin(
 
 
 async def verify_api_key(
-    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    x_api_key: Optional[str] = Header(default=None),
     conn: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
     """透過 X-API-Key 標頭常數時間驗證用戶 (Constant-time authentication via X-API-Key).

@@ -52,9 +52,11 @@
 
 .tree-scroll-area {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 34px);
+  overflow: hidden;
+  padding: 0;
 }
 
 /* Smart Folders Section (All, Unread, Starred, Trash) */
@@ -65,13 +67,13 @@
 }
 
 .tree-item {
-  height: var(--row-height);
+  height: max(24px, calc(var(--tree-font-size, 12px) + 12px));
   display: flex;
   align-items: center;
   padding: 0 8px;
   gap: 6px;
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: var(--tree-font-size, 12px);
   color: var(--text-secondary);
   position: relative;
   transition: background-color 0.1s;
@@ -113,7 +115,7 @@
 }
 
 .tree-count {
-  font-size: var(--font-size-xs);
+  font-size: max(10px, calc(var(--tree-font-size, 12px) - 1px));
   font-weight: 600;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -157,19 +159,32 @@
   color: var(--text-primary);
 }
 
+.tree-row-btn.btn-refresh:hover {
+  color: var(--accent-primary);
+}
+
+.tree-row-btn.spinning svg {
+  animation: tree-spin 0.8s linear infinite;
+}
+
+@keyframes tree-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .tree-row-btn.btn-delete:hover {
   color: var(--accent-danger, #ef4444);
 }
 
 /* Categories & Feeds Section */
 .category-item {
-  height: var(--row-height);
+  height: max(24px, calc(var(--tree-font-size, 12px) + 12px));
   display: flex;
   align-items: center;
   padding: 0 6px 0 4px;
   gap: 4px;
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: var(--tree-font-size, 12px);
   font-weight: 600;
   color: var(--text-secondary);
   transition: background-color 0.1s;
@@ -208,13 +223,13 @@
 }
 
 .feed-item {
-  height: var(--row-height);
+  height: max(24px, calc(var(--tree-font-size, 12px) + 12px));
   display: flex;
   align-items: center;
   padding: 0 8px 0 4px;
   gap: 6px;
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: var(--tree-font-size, 12px);
   color: var(--text-secondary);
   transition: background-color 0.1s;
   min-width: 0;
@@ -253,3 +268,90 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+/* Category Aggregated Error Badges */
+.category-error-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  line-height: 1;
+}
+
+.category-error-badge.dead {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.category-error-badge.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Vertical Splitter between Categories and Tags */
+.tree-pane-splitter {
+  height: 8px;
+  background: var(--bg-surface-hover, #22272e);
+  cursor: row-resize;
+  position: relative;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+  z-index: 20;
+  border-top: 1px solid var(--border-color-subtle);
+  border-bottom: 1px solid var(--border-color-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.tree-pane-splitter::before {
+  content: "";
+  width: 24px;
+  height: 2px;
+  background: var(--text-muted);
+  opacity: 0.5;
+  border-radius: 1px;
+  transition: all 0.15s ease;
+}
+
+.tree-pane-splitter::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  z-index: 21;
+}
+
+.tree-pane-splitter:hover,
+.tree-pane-splitter.dragging {
+  background: var(--accent-primary, #3b82f6) !important;
+}
+
+.tree-pane-splitter:hover::before,
+.tree-pane-splitter.dragging::before {
+  background: #ffffff;
+  opacity: 1;
+  width: 32px;
+}
+
+/* 全域拖曳時透明遮罩 (防止 iframe 或其他元件截斷 mousemove) */
+.drag-resizing-active {
+  user-select: none !important;
+  cursor: row-resize !important;
+}
+.drag-resizing-active iframe,
+.drag-resizing-active webview {
+  pointer-events: none !important;
+}
+
+

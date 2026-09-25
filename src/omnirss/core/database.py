@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS categories (
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     custom_retention_days INTEGER DEFAULT NULL,
+    custom_interval_minutes INTEGER DEFAULT NULL,
+    custom_min_date DATETIME DEFAULT NULL,
+    force_min_date BOOLEAN NOT NULL DEFAULT 0,
     unread_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name)
@@ -56,6 +59,11 @@ CREATE TABLE IF NOT EXISTS feeds (
     next_check_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_paused BOOLEAN NOT NULL DEFAULT 0,
     requires_flaresolverr BOOLEAN NOT NULL DEFAULT 0,
+    auto_full_text BOOLEAN NOT NULL DEFAULT 0,
+    min_publish_date DATETIME DEFAULT NULL,
+    force_min_date BOOLEAN NOT NULL DEFAULT 0,
+    auth_username TEXT DEFAULT NULL,
+    auth_password TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_feeds_next_check ON feeds(next_check_at ASC) WHERE is_paused = 0;
@@ -97,6 +105,7 @@ CREATE TABLE IF NOT EXISTS user_article_states (
     article_id INTEGER NOT NULL REFERENCES articles_hot(id) ON DELETE CASCADE,
     is_read BOOLEAN NOT NULL DEFAULT 0,
     is_starred BOOLEAN NOT NULL DEFAULT 0,
+    is_trash BOOLEAN NOT NULL DEFAULT 0,
     starred_at DATETIME,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(user_id, article_id)
@@ -288,6 +297,11 @@ END;
 """
 
 
+import asyncio
+
+DB_WRITE_LOCK = asyncio.Lock()
+
+
 def compute_entry_hash(feed_id: int, guid: str, url: str) -> str:
     """計算文章物理唯一去重雜湊 (Compute SHA-256 entry hash).
 
@@ -308,7 +322,7 @@ def apply_pragmas(conn: Union[sqlite3.Connection, aiosqlite.Connection]) -> None
     pragmas = [
         "PRAGMA journal_mode = WAL;",
         "PRAGMA synchronous = NORMAL;",
-        "PRAGMA busy_timeout = 5000;",
+        "PRAGMA busy_timeout = 60000;",
         "PRAGMA cache_size = -64000;",
         "PRAGMA temp_store = MEMORY;",
         "PRAGMA foreign_keys = ON;",
@@ -328,7 +342,7 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=60.0)
     try:
         conn.row_factory = sqlite3.Row
         apply_pragmas(conn)
@@ -340,13 +354,118 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
             except sqlite3.OperationalError:
                 pass
         try:
+            conn.execute("ALTER TABLE categories ADD COLUMN custom_interval_minutes INTEGER DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_article_states ADD COLUMN is_trash BOOLEAN NOT NULL DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE feeds ADD COLUMN auto_full_text BOOLEAN NOT NULL DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE feeds ADD COLUMN min_publish_date DATETIME DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE feeds ADD COLUMN auth_username TEXT DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE feeds ADD COLUMN auth_password TEXT DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE feeds ADD COLUMN force_min_date BOOLEAN NOT NULL DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE categories ADD COLUMN custom_min_date DATETIME DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE categories ADD COLUMN force_min_date BOOLEAN NOT NULL DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_states_trash ON user_article_states(user_id, is_trash);")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.executescript(FTS5_SCHEMA)
         except sqlite3.OperationalError as e:
             logger.warning(f"FTS5 initialization notice: {e}")
         conn.executescript(TRIGGERS_UNREAD_SCHEMA)
+
+        # 種植 QuiteRSS 經典 5 組標籤 (Seed default QuiteRSS tags for existing users)
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO tags (user_id, name, color_hex, sort_order)
+                SELECT u.id, t.name, t.color_hex, t.sort_order
+                FROM users u
+                CROSS JOIN (
+                    SELECT '重要' AS name, '#ef4444' AS color_hex, 1 AS sort_order UNION ALL
+                    SELECT '工作', '#f97316', 2 UNION ALL
+                    SELECT '個人', '#10b981', 3 UNION ALL
+                    SELECT '待讀', '#3b82f6', 4 UNION ALL
+                    SELECT '稍後閱讀', '#8b5cf6', 5
+                ) t;
+            """)
+        except Exception as e:
+            logger.debug(f"Default tags seed notice: {e}")
+
+        # 自動修復歷史 PTT 廢棄子網域 (Auto-repair legacy rss.ptt.cc URLs to official https://www.ptt.cc/atom/*.xml)
+        try:
+            conn.execute("""
+                UPDATE feeds
+                SET feed_url = 'https://www.ptt.cc/atom/' || REPLACE(REPLACE(feed_url, 'http://rss.ptt.cc/', ''), 'https://rss.ptt.cc/', ''),
+                    error_count = 0,
+                    last_error_message = NULL
+                WHERE feed_url LIKE '%rss.ptt.cc%';
+            """)
+        except Exception as e:
+            logger.debug(f"PTT legacy URL migration notice: {e}")
+
+        # 自動自癒歷史未讀計數與重置索引健全度 (Self-heal all unread counts & reindex on startup)
+        try:
+            conn.execute("REINDEX;")
+            conn.execute("""
+                UPDATE user_feeds
+                SET unread_count = (
+                    SELECT COUNT(*)
+                    FROM articles_hot a
+                    LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = user_feeds.user_id
+                    WHERE a.feed_id = user_feeds.feed_id AND COALESCE(uas.is_read, 0) = 0
+                );
+            """)
+            conn.execute("""
+                UPDATE categories
+                SET unread_count = (
+                    SELECT COALESCE(SUM(unread_count), 0)
+                    FROM user_feeds
+                    WHERE user_feeds.category_id = categories.id AND user_feeds.user_id = categories.user_id
+                );
+            """)
+        except Exception as e:
+            logger.debug(f"Unread self-heal notice: {e}")
+
         conn.commit()
     finally:
         conn.close()
+
+
+import asyncio
+
+_GLOBAL_WRITE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _get_write_lock_for_path(path: Path) -> asyncio.Lock:
+    resolved = str(path.resolve())
+    if resolved not in _GLOBAL_WRITE_LOCKS:
+        _GLOBAL_WRITE_LOCKS[resolved] = asyncio.Lock()
+    return _GLOBAL_WRITE_LOCKS[resolved]
 
 
 class DatabaseManager:
@@ -359,6 +478,10 @@ class DatabaseManager:
         else:
             self.db_path = Path(db_path)
 
+    @property
+    def write_lock(self) -> asyncio.Lock:
+        return _get_write_lock_for_path(self.db_path)
+
     async def initialize(self) -> None:
         """非同步初始化資料庫表結構 (Async database initialization)."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,20 +493,31 @@ class DatabaseManager:
 
         :return: aiosqlite 連線生成器
         """
-        conn = await aiosqlite.connect(str(self.db_path))
+        conn = await aiosqlite.connect(str(self.db_path), timeout=60.0)
         try:
             conn.row_factory = aiosqlite.Row
             await conn.execute("PRAGMA journal_mode = WAL;")
             await conn.execute("PRAGMA synchronous = NORMAL;")
-            await conn.execute("PRAGMA busy_timeout = 5000;")
+            await conn.execute("PRAGMA busy_timeout = 60000;")
             await conn.execute("PRAGMA foreign_keys = ON;")
             yield conn
         finally:
             await conn.close()
 
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncGenerator[aiosqlite.Connection, None]:
+        """獲取獨佔寫入鎖與資料庫連線交易 (Get exclusive single-writer connection transaction).
+
+        :return: aiosqlite 連線生成器
+        """
+        async with self.write_lock:
+            async with self.get_connection() as conn:
+                yield conn
+
     # 常用別名 (Convenience aliases)
     init_db = initialize
     get_db = get_connection
+
 
     async def close(self) -> None:
         """關閉連線池 (Close pool, no-op for transient connections)."""

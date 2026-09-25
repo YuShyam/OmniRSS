@@ -50,6 +50,7 @@ CHROME_HEADERS: dict[str, str] = {
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
     "Upgrade-Insecure-Requests": "1",
+    "Connection": "close",
 }
 
 # QuiteRSS 桌面客戶端 Qt 指紋 (QuiteRSS Desktop Client Qt Fingerprint Headers)
@@ -124,7 +125,7 @@ class CrawlerEngine:
 
     def __init__(
         self,
-        timeout: float = 15.0,
+        timeout: float = 8.0,
         flaresolverr_url: Optional[str] = None,
     ) -> None:
         """初始化爬蟲引擎 (Initialize crawler engine).
@@ -135,21 +136,12 @@ class CrawlerEngine:
         self.timeout = timeout
         self.flaresolverr_url = flaresolverr_url
 
-    async def _safe_http_get(
+    async def _single_hop_http_get(
         self,
         url: str,
         headers: dict[str, str],
     ) -> tuple[int, dict[str, str], bytes]:
-        """執行具備 Anti-SSRF 與防 DoS 串流讀取之底層非同步 HTTP GET (Safe async HTTP GET).
-
-        :param url: 目標網址 (Target URL)
-        :param headers: HTTP 標頭字典 (HTTP headers dictionary)
-        :return: (狀態碼, 響應標頭字典, 原始位元組內容)
-        :raises SSRFBlockedException: 命中私有 IP 或非法協議
-        :raises asyncio.TimeoutError: 連線或讀取逾時
-        :raises Exception: 網路與傳輸例外
-        """
-        # 第一道防線：Anti-SSRF 網址安全檢驗與 DNS 解析
+        """執行單跳底層非同步 HTTP GET (Single hop async HTTP GET)."""
         resolved_ips = AntiSSRFClient.verify_url(url)
         parsed = urllib.parse.urlparse(url)
         is_ssl = parsed.scheme.lower() == "https"
@@ -173,7 +165,6 @@ class CrawlerEngine:
         ssl_ctx: Optional[ssl.SSLContext] = None
         if is_ssl:
             ssl_ctx = ssl.create_default_context()
-            # 保持 SNI 伺服器名稱指示正確 (Preserve SNI hostname)
             server_hostname = parsed.hostname
         else:
             server_hostname = None
@@ -233,25 +224,54 @@ class CrawlerEngine:
             total_bytes = len(body_initial)
 
             # 檢查 Content-Length 或 Chunked
+            content_length: Optional[int] = None
+            if "content-length" in resp_headers:
+                try:
+                    content_length = int(resp_headers["content-length"])
+                except ValueError:
+                    content_length = None
+
             is_chunked = (
                 resp_headers.get("transfer-encoding", "").lower() == "chunked"
             )
 
-            while True:
-                chunk = await asyncio.wait_for(
-                    reader.read(8192), timeout=self.timeout
-                )
+            # 若 body_initial 已經滿足 Content-Length 或 Chunked 結束，無需再讀取
+            can_finish = False
+            if content_length is not None and total_bytes >= content_length:
+                can_finish = True
+            elif is_chunked and (b"\r\n0\r\n\r\n" in body_initial or body_initial.endswith(b"0\r\n\r\n") or body_initial == b"0\r\n\r\n"):
+                can_finish = True
+
+            while not can_finish:
+                try:
+                    chunk = await asyncio.wait_for(
+                        reader.read(8192), timeout=self.timeout
+                    )
+                except (asyncio.TimeoutError, ConnectionResetError):
+                    break
+
                 if not chunk:
                     break
                 total_bytes += len(chunk)
+                body_chunks.append(chunk)
+
+                if content_length is not None and total_bytes >= content_length:
+                    break
+
+                if is_chunked:
+                    tail = b"".join(body_chunks[-3:])
+                    if b"\r\n0\r\n\r\n" in tail or tail.endswith(b"0\r\n\r\n"):
+                        break
+
                 if total_bytes > MAX_RESPONSE_SIZE:
                     logger.warning(
                         f"Stream cutoff triggered: payload from '{url}' exceeded 10MB"
                     )
                     break
-                body_chunks.append(chunk)
 
             raw_body = b"".join(body_chunks)
+            if content_length is not None and len(raw_body) > content_length:
+                raw_body = raw_body[:content_length]
 
             # 若為 chunked 編碼，簡易解包 (Unpack chunked if needed)
             if is_chunked and raw_body:
@@ -282,6 +302,43 @@ class CrawlerEngine:
                 await writer.wait_closed()
             except Exception:
                 pass
+
+    async def _safe_http_get(
+        self,
+        url: str,
+        headers: dict[str, str],
+        max_redirects: int = 5,
+    ) -> tuple[int, dict[str, str], bytes]:
+        """執行具備 Anti-SSRF、自動轉址追蹤與防 DoS 串流讀取之非同步 HTTP GET (Safe async HTTP GET with redirects).
+
+        :param url: 目標網址 (Target URL)
+        :param headers: HTTP 標頭字典 (HTTP headers dictionary)
+        :param max_redirects: 最大允許跳轉次數 (Maximum redirect hops)
+        :return: (狀態碼, 響應標頭字典, 原始位元組內容)
+        :raises SSRFBlockedException: 命中私有 IP 或非法協議
+        :raises asyncio.TimeoutError: 連線或讀取逾時
+        :raises Exception: 網路與傳輸例外
+        """
+        current_url = url
+        current_headers = dict(headers)
+
+        for hop in range(max_redirects + 1):
+            status_code, resp_headers, raw_body = await self._single_hop_http_get(
+                current_url, current_headers
+            )
+
+            # 處理 301, 302, 303, 307, 308 重新導向 (Follow HTTP redirects)
+            if status_code in (301, 302, 303, 307, 308) and "location" in resp_headers:
+                loc = resp_headers["location"]
+                next_url = urllib.parse.urljoin(current_url, loc)
+                logger.debug(f"HTTP {status_code} Redirect ({hop+1}/{max_redirects}): {current_url} -> {next_url}")
+                current_url = next_url
+                current_headers["Referer"] = get_origin_referer(current_url)
+                continue
+
+            return status_code, resp_headers, raw_body
+
+        return status_code, resp_headers, raw_body
 
     def _decode_chunked(self, chunked_bytes: bytes) -> bytes:
         """解碼 HTTP Chunked 傳輸位元組 (Decode chunked transfer payload)."""
@@ -315,6 +372,8 @@ class CrawlerEngine:
         etag: Optional[str] = None,
         last_modified: Optional[str] = None,
         requires_flaresolverr: bool = False,
+        force_refresh: bool = False,
+        auth: Optional[tuple[str, str]] = None,
     ) -> CrawlResult:
         """非同步抓取並解析 RSS/Atom 頻道 (Fetch and parse feed with 3-stage fallback).
 
@@ -322,17 +381,32 @@ class CrawlerEngine:
         :param etag: 前次暫存之 ETag 標頭 (Cached ETag header)
         :param last_modified: 前次暫存之 Last-Modified 標頭 (Cached Last-Modified header)
         :param requires_flaresolverr: 是否強制透過 FlareSolverr 側邊欄 (Force FlareSolverr sidecar)
+        :param force_refresh: 是否強制繞過 304 快取標頭 (Force fresh fetch without ETag/Last-Modified)
+        :param auth: HTTP 認證 (username, password) 序對 (HTTP Basic Auth tuple)
         :return: 抓取與解析結果 CrawlResult 實例
         """
+        current_url = url
+        # 智慧 PTT URL 正規化 (自動升級舊版 rss.ptt.cc 至官方 https://www.ptt.cc/atom/*.xml)
+        if "rss.ptt.cc" in current_url.lower():
+            board = current_url.rstrip("/").split("/")[-1].replace(".xml", "")
+            current_url = f"https://www.ptt.cc/atom/{board}.xml"
+
         # 準備基礎標頭組與 Auto-Referer
         base_headers = dict(CHROME_HEADERS)
-        base_headers["Referer"] = get_origin_referer(url)
-        if etag:
-            base_headers["If-None-Match"] = etag
-        if last_modified:
-            base_headers["If-Modified-Since"] = last_modified
+        base_headers["Referer"] = get_origin_referer(current_url)
+        if "ptt.cc" in current_url.lower():
+            base_headers["Cookie"] = "over18=1"
+        if auth and auth[0]:
+            import base64
+            auth_str = f"{auth[0]}:{auth[1] or ''}"
+            encoded = base64.b64encode(auth_str.encode("utf-8")).decode("ascii")
+            base_headers["Authorization"] = f"Basic {encoded}"
+        if not force_refresh:
+            if etag:
+                base_headers["If-None-Match"] = etag
+            if last_modified:
+                base_headers["If-Modified-Since"] = last_modified
 
-        current_url = url
         last_error = ""
 
         # =====================================================================
@@ -468,6 +542,50 @@ class CrawlerEngine:
             error_message=f"All crawl stages failed. Last error: {last_error}",
             used_stage="failed",
         )
+
+    async def fetch_web_page(
+        self,
+        url: str,
+        requires_flaresolverr: bool = False,
+        auth: Optional[tuple[str, str]] = None,
+    ) -> tuple[int, str]:
+        """抓取目標網頁之原始 HTML 內容 (Fetch raw web page HTML with Anti-SSRF and Chrome headers).
+
+        :param url: 目標網址 (Target Web Page URL)
+        :param requires_flaresolverr: 是否使用 FlareSolverr 側邊欄 (Use FlareSolverr sidecar)
+        :param auth: 可選之 HTTP 基本認證 (Optional HTTP Basic Auth)
+        :return: (HTTP 狀態碼, 解碼後之 HTML 字串)
+        """
+        current_url = url
+        base_headers = dict(CHROME_HEADERS)
+        base_headers["Referer"] = get_origin_referer(current_url)
+        if "ptt.cc" in current_url.lower():
+            base_headers["Cookie"] = "over18=1"
+        if auth and auth[0]:
+            import base64
+            auth_str = f"{auth[0]}:{auth[1] or ''}"
+            encoded = base64.b64encode(auth_str.encode("utf-8")).decode("ascii")
+            base_headers["Authorization"] = f"Basic {encoded}"
+
+        try:
+            status, resp_headers, body = await self._safe_http_get(
+                current_url, base_headers
+            )
+            # 智能偵測編碼 (Smart charset decoding)
+            content_type = resp_headers.get("content-type", "").lower()
+            encoding = "utf-8"
+            if "charset=" in content_type:
+                encoding = content_type.split("charset=")[-1].split(";")[0].strip()
+            
+            try:
+                html_text = body.decode(encoding, errors="replace")
+            except Exception:
+                html_text = body.decode("utf-8", errors="replace")
+
+            return status, html_text
+        except Exception as e:
+            logger.warning(f"Failed to fetch web page '{url}': {e}")
+            return 500, ""
 
     async def _fetch_via_flaresolverr(
         self, target_url: str
@@ -626,15 +744,266 @@ class CrawlerEngine:
         return articles, feed_dto
 
     @staticmethod
-    def extract_full_text_from_html(
-        html_str: str, base_url: str = ""
-    ) -> Optional[str]:
-        """使用 Trafilatura 從原始 HTML 萃取結構化去噪內文 (Extract clean article content using Trafilatura).
+    def _extract_ptt(html_str: str) -> Optional[str]:
+        """PTT Web 版 BBS 結構、文章內文排版與推文專屬解析器 (PTT BBS Fulltext Parser)."""
+        try:
+            import html as py_html
+            from bs4 import BeautifulSoup
 
-        :param html_str: 原始 HTML 字串 (Raw HTML markup)
-        :param base_url: 基準網址 (Base URL)
-        :return: 脫毒與去噪後的 HTML 內文或 None
+            soup = BeautifulSoup(html_str, "html.parser")
+            main_content = soup.find(id="main-content")
+            if not main_content:
+                return None
+
+            # 1. 抽取推文區塊並轉換為結構化卡片 HTML
+            pushes = main_content.find_all("div", class_="push")
+            push_items_html = []
+            for p in pushes:
+                tag_span = p.find("span", class_="push-tag")
+                user_span = p.find("span", class_="push-userid")
+                content_span = p.find("span", class_="push-content")
+                time_span = p.find("span", class_="push-ipdatetime")
+
+                tag_text = tag_span.get_text(strip=True) if tag_span else ""
+                user_text = user_span.get_text(strip=True) if user_span else ""
+                content_text = content_span.get_text(strip=True) if content_span else ""
+                time_text = time_span.get_text(strip=True) if time_span else ""
+
+                tag_color = "#10b981" if "推" in tag_text else "#ef4444" if "噓" in tag_text else "#6b7280"
+                push_items_html.append(
+                    f'<div style="display:flex; align-items:baseline; gap:8px; padding:4px 0; border-bottom:1px solid var(--border-color, rgba(0,0,0,0.05)); font-size:13px;">'
+                    f'<span style="font-weight:bold; color:{tag_color}; width:20px; flex-shrink:0;">{py_html.escape(tag_text)}</span>'
+                    f'<span style="font-weight:600; color:var(--text-secondary, #4b5563); width:100px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{py_html.escape(user_text)}</span>'
+                    f'<span style="flex:1; color:var(--text-primary, #111827); word-break:break-word;">{py_html.escape(content_text)}</span>'
+                    f'<span style="font-size:11px; color:var(--text-muted, #9ca3af); flex-shrink:0;">{py_html.escape(time_text)}</span>'
+                    f'</div>'
+                )
+                p.decompose()
+
+            # 2. 抽取頂部 BBS metadata (作者、看板、標題、時間)
+            meta_items = []
+            for meta in main_content.find_all("div", class_="article-metaline"):
+                tag = meta.find("span", class_="article-meta-tag")
+                val = meta.find("span", class_="article-meta-value")
+                if tag and val:
+                    meta_items.append((tag.get_text(strip=True), val.get_text(strip=True)))
+                meta.decompose()
+
+            for meta in main_content.find_all("div", class_="article-metaline-right"):
+                tag = meta.find("span", class_="article-meta-tag")
+                val = meta.find("span", class_="article-meta-value")
+                if tag and val:
+                    meta_items.append((tag.get_text(strip=True), val.get_text(strip=True)))
+                meta.decompose()
+
+            # 3. 取得主內文文字並做智慧排版與換行處理
+            raw_text = main_content.get_text()
+
+            # 圖片網址偵測 Regex
+            img_url_pattern = re.compile(
+                r'(https?://(?:i\.)?imgur\.com/[a-zA-Z0-9]+(?:\.[a-zA-Z]{3,4})?|https?://[^\s<>"\']+\.(?:jpg|jpeg|png|gif|webp|bmp))',
+                re.IGNORECASE,
+            )
+
+            # 一般網址偵測 Regex
+            link_url_pattern = re.compile(
+                r'(https?://[^\s<>"\']+)',
+                re.IGNORECASE,
+            )
+
+            # 將文字依換行分割，保留所有行距與縮排
+            paragraphs = raw_text.split('\n')
+            formatted_paragraphs = []
+
+            for line in paragraphs:
+                line_str = line.strip()
+                if not line_str:
+                    formatted_paragraphs.append('<br>')
+                    continue
+
+                # 簽名檔分界線與發信站美化
+                if line_str == '--':
+                    formatted_paragraphs.append('<hr style="border:none; border-top:1px dashed var(--border-color, #ccc); margin:16px 0;" />')
+                    continue
+                if line_str.startswith('※ 發信站:') or line_str.startswith('※ 文章網址:'):
+                    escaped_line = py_html.escape(line_str)
+                    linked_line = link_url_pattern.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer" style="color:var(--accent-primary, #3b82f6); text-decoration:underline;">\1</a>', escaped_line)
+                    formatted_paragraphs.append(f'<div style="font-size:12px; color:var(--text-muted, #666); margin:4px 0;">{linked_line}</div>')
+                    continue
+
+                # 檢查整行是否為圖片網址
+                img_match = img_url_pattern.search(line_str)
+                if img_match and len(line_str) == len(img_match.group(0)):
+                    img_url = img_match.group(0)
+                    if "imgur.com" in img_url and not any(img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
+                        img_url = img_url.replace("imgur.com", "i.imgur.com") + ".jpg"
+                    formatted_paragraphs.append(f'<div style="margin:12px 0; text-align:center;"><img src="{img_url}" alt="PTT Image" style="max-width:100%; max-height:600px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);" loading="lazy" /></div>')
+                    continue
+
+                # 一般內文行：轉義 HTML、替換圖片與超連結
+                escaped = py_html.escape(line_str)
+
+                def _img_sub(m):
+                    u = m.group(1)
+                    if "imgur.com" in u and not any(u.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
+                        u = u.replace("imgur.com", "i.imgur.com") + ".jpg"
+                    return f'<div style="margin:8px 0; text-align:center;"><img src="{u}" alt="PTT Image" style="max-width:100%; border-radius:6px;" loading="lazy" /></div>'
+
+                with_imgs = img_url_pattern.sub(_img_sub, escaped)
+                with_links = link_url_pattern.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer" style="color:var(--accent-primary, #3b82f6); text-decoration:underline;">\1</a>', with_imgs)
+
+                formatted_paragraphs.append(f'<p style="margin:6px 0; line-height:1.75; font-size:15px; color:var(--text-primary);">{with_links}</p>')
+
+            # 4. 組合 BBS Metadata Header
+            meta_block = ""
+            if meta_items:
+                meta_rows = "".join(
+                    f'<div style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:4px;">'
+                    f'<span style="font-weight:600; color:var(--text-secondary); width:40px; flex-shrink:0;">{py_html.escape(k)}</span>'
+                    f'<span style="color:var(--text-primary);">{py_html.escape(v)}</span>'
+                    f'</div>'
+                    for k, v in meta_items
+                )
+                meta_block = (
+                    '<div class="ptt-meta-card" style="margin-bottom:18px; padding:12px 14px; background:var(--bg-surface-elevated, rgba(0,0,0,0.03)); border-left:3px solid var(--accent-primary, #3b82f6); border-radius:4px;">'
+                    + meta_rows
+                    + '</div>'
+                )
+
+            # 5. 組合推文區塊
+            pushes_block = ""
+            if push_items_html:
+                pushes_block = (
+                    '<div style="margin-top:28px; padding:16px; background:var(--card-bg, rgba(0,0,0,0.02)); border-radius:10px; border:1px solid var(--border-color, rgba(0,0,0,0.08));">'
+                    f'<h4 style="margin:0 0 12px 0; font-size:14px; font-weight:600; color:var(--text-primary, #111827);">💬 PTT 鄉民推文 ({len(push_items_html)})</h4>'
+                    + "".join(push_items_html)
+                    + '</div>'
+                )
+
+            body_html = meta_block + "".join(formatted_paragraphs) + pushes_block
+            return HTMLSanitizer.clean(body_html)
+        except Exception as exc:
+            logger.debug(f"PTT custom extraction error: {exc}")
+            return None
+
+    @staticmethod
+    def _extract_yahoo(html_str: str) -> Optional[str]:
+        """Yahoo 新聞與影音內文專屬解析器 (Yahoo News .caas-body Fulltext Parser)."""
+        try:
+            from bs4 import BeautifulSoup
+
+            soup = BeautifulSoup(html_str, "html.parser")
+            body_container = (
+                soup.find(class_=re.compile(r"caas-body|story-body|article-body"))
+                or soup.find("article")
+            )
+            if not body_container:
+                return None
+
+            # 移除廣告、社群分享與無關推薦區塊
+            for noise in body_container.find_all(
+                class_=re.compile(r"caas-readmore|caas-share|ad-container|advertisement|inline-ad")
+            ):
+                noise.decompose()
+
+            # 修正圖片來源
+            for img in body_container.find_all("img"):
+                real_src = img.get("data-src") or img.get("src") or img.get("data-original")
+                if real_src and real_src.startswith("http"):
+                    img["src"] = real_src
+                    img["style"] = "max-width:100%; height:auto; border-radius:8px; margin:12px 0;"
+                else:
+                    img.decompose()
+
+            paragraphs = body_container.find_all(["p", "img", "blockquote", "h2", "h3"])
+            if not paragraphs:
+                return None
+
+            out_html = "".join(str(p) for p in paragraphs if p.get_text(strip=True) or p.name == "img")
+            return HTMLSanitizer.clean(out_html) if len(out_html) > 50 else None
+        except Exception as exc:
+            logger.debug(f"Yahoo News custom extraction error: {exc}")
+            return None
+
+    @staticmethod
+    def _extract_semantic_fallback(html_str: str) -> Optional[str]:
+        """語意標籤與閱讀器啟發式回退抽取器 (Semantic HTML & Readability Heuristic Fallback)."""
+        try:
+            from bs4 import BeautifulSoup
+
+            soup = BeautifulSoup(html_str, "html.parser")
+            # 移除 script, style, nav, footer, header
+            for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "aside"]):
+                tag.decompose()
+
+            main_elem = (
+                soup.find("article")
+                or soup.find("main")
+                or soup.find(class_=re.compile(r"content|post-content|article-content|entry-content"))
+                or soup.find(id=re.compile(r"content|main|article"))
+            )
+
+            if not main_elem:
+                main_elem = soup.body
+
+            if not main_elem:
+                return None
+
+            # 取得所有實質段落
+            paragraphs = main_elem.find_all(["p", "img", "blockquote", "h2", "h3"])
+            if not paragraphs:
+                return None
+
+            out_parts = []
+            for p in paragraphs:
+                if p.name == "img":
+                    src = p.get("data-src") or p.get("src")
+                    if src and src.startswith("http"):
+                        out_parts.append(f'<p><img src="{src}" style="max-width:100%; border-radius:8px;" /></p>')
+                else:
+                    text = p.get_text(strip=True)
+                    if len(text) > 5:
+                        out_parts.append(f"<p>{text}</p>")
+
+            if out_parts:
+                combined = "".join(out_parts)
+                return HTMLSanitizer.clean(combined) if len(combined) > 30 else None
+            return None
+        except Exception as exc:
+            logger.debug(f"Semantic fallback error: {exc}")
+            return None
+
+    @classmethod
+    def extract_full_text_from_html(
+        cls, html_str: str, base_url: str = ""
+    ) -> Optional[str]:
+        """三階梯高韌性全文萃取引擎 (Multi-Tier High-Resilience Fulltext Extractor).
+
+        階梯一：特定平台專屬語意解析 (PTT BBS + 推文 / Yahoo 新聞 .caas-body)
+        階梯二：Trafilatura 機器學習智能正文抽取
+        階梯三：Semantic HTML 與 Readability 啟發式段落回退
+
+        :param html_str: 原始 HTML 標記字串 (Raw HTML markup)
+        :param base_url: 基準來源網址 (Base URL)
+        :return: 脫毒與格式化後的結構化 HTML 內文或 None
         """
+        if not html_str:
+            return None
+
+        url_lower = (base_url or "").lower()
+
+        # 階梯一 (Tier 1): 專屬平台抽取
+        if "ptt.cc" in url_lower or 'id="main-content"' in html_str:
+            ptt_res = cls._extract_ptt(html_str)
+            if ptt_res and len(ptt_res) > 30:
+                return ptt_res
+
+        if "yahoo.com" in url_lower or "caas-body" in html_str:
+            yahoo_res = cls._extract_yahoo(html_str)
+            if yahoo_res and len(yahoo_res) > 50:
+                return yahoo_res
+
+        # 階梯二 (Tier 2): Trafilatura 機器學習正文萃取
         try:
             import trafilatura
 
@@ -645,8 +1014,17 @@ class CrawlerEngine:
                 include_images=True,
                 output_format="html",
             )
-            return HTMLSanitizer.clean(extracted) if extracted else None
+            if extracted and len(extracted.strip()) > 50:
+                clean_res = HTMLSanitizer.clean(extracted)
+                if clean_res:
+                    return clean_res
         except Exception as e:
-            logger.debug(f"Trafilatura extraction skipped or failed: {e}")
-            return None
+            logger.debug(f"Trafilatura extraction failed for {base_url}: {e}")
+
+        # 階梯三 (Tier 3): 語意 HTML 與 Readability 啟發式回退
+        fallback_res = cls._extract_semantic_fallback(html_str)
+        if fallback_res:
+            return fallback_res
+
+        return None
 

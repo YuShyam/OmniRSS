@@ -18,7 +18,7 @@ class ServerConfig(BaseModel):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    secret_key: str = ""
     timezone: str = "Asia/Taipei"
     log_level: str = "INFO"
 
@@ -67,6 +67,8 @@ class RetentionConfig(BaseModel):
     max_articles_per_feed: int = 0
     keep_starred_forever: bool = True
     keep_tagged_forever: bool = True
+    min_publish_date: Optional[str] = None
+    force_min_date: bool = False
 
 
 class AppSettings(BaseSettings):
@@ -122,9 +124,24 @@ def load_settings(config_path: Optional[str | Path] = None) -> AppSettings:
 
     settings = AppSettings.model_validate(raw_data)
 
-    # 若 secret_key 為空，自動動態生成安全密鑰
+    # 若 secret_key 為空，自動由 data/.jwt_secret 載入或生成安全密鑰 (Persist secret key across server restarts)
     if not settings.server.secret_key:
-        settings.server.secret_key = secrets.token_urlsafe(32)
+        secret_file = base_dir / "data" / ".jwt_secret"
+        if secret_file.is_file():
+            try:
+                loaded_key = secret_file.read_text("utf-8").strip()
+                if loaded_key:
+                    settings.server.secret_key = loaded_key
+            except Exception:
+                pass
+        if not settings.server.secret_key:
+            new_key = secrets.token_urlsafe(32)
+            settings.server.secret_key = new_key
+            try:
+                secret_file.parent.mkdir(parents=True, exist_ok=True)
+                secret_file.write_text(new_key, "utf-8")
+            except Exception:
+                pass
 
     _GLOBAL_SETTINGS = settings
     return settings

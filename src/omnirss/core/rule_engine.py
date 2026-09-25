@@ -8,7 +8,7 @@ import logging
 import re
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from omnirss.sdk.models import ArticleDTO
 
@@ -60,17 +60,54 @@ class RuleActionType(str, Enum):
 class RuleCondition(BaseModel):
     """規則單一條件模型 (Single Rule Condition)."""
 
-    field: RuleField
-    operator: RuleOperator
-    value: str
+    field: RuleField = RuleField.TITLE
+    operator: RuleOperator = RuleOperator.CONTAINS
+    value: str = ""
     case_sensitive: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_condition(cls, data: Any) -> Any:
+        """防衛性解析字串或欄位別名 (Defensively normalize string or dict payload)."""
+        if isinstance(data, str):
+            return {
+                "field": RuleField.TITLE,
+                "operator": RuleOperator.CONTAINS,
+                "value": data,
+                "case_sensitive": False,
+            }
+        if isinstance(data, dict):
+            field = data.get("field", "title")
+            if field in ("content_text", "content_html"):
+                data["field"] = "content"
+            elif field in ("link",):
+                data["field"] = "url"
+            elif field in ("feed",):
+                data["field"] = "feed_title"
+            if "operator" not in data:
+                data["operator"] = "contains"
+            if "value" not in data:
+                data["value"] = ""
+        return data
 
 
 class RuleAction(BaseModel):
     """規則觸發動作模型 (Triggered Action Model)."""
 
-    action: RuleActionType
+    action: RuleActionType = RuleActionType.MARK_READ
     params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_action(cls, data: Any) -> Any:
+        """防衛性解析字串或動作別名 (Defensively normalize string or dict payload)."""
+        if isinstance(data, str):
+            return {"action": data, "params": {}}
+        if isinstance(data, dict):
+            act = data.get("action") or data.get("action_type") or "mark_read"
+            params = data.get("params") or data.get("parameters") or {}
+            return {"action": act, "params": params}
+        return data
 
 
 class RuleDef(BaseModel):
@@ -216,7 +253,7 @@ class RuleEngine:
                     article.extra_tags.append("trashed")
                 executed.append("trash")
             elif act.action == RuleActionType.ADD_TAG:
-                tag_name = act.params.get("tag_name", "").strip()
+                tag_name = (act.params.get("tag_name") or act.params.get("tag") or "").strip()
                 if tag_name and tag_name not in article.extra_tags:
                     article.extra_tags.append(tag_name)
                     executed.append(f"add_tag:{tag_name}")

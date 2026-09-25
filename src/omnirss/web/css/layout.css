@@ -14,7 +14,7 @@ html, body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  font-family: var(--font-sans);
+  font-family: var(--custom-font-family, var(--font-sans));
   font-size: var(--font-size-base);
   background-color: var(--bg-app);
   color: var(--text-primary);
@@ -117,6 +117,20 @@ html, body {
   background: var(--accent-primary-dim);
   color: var(--accent-primary);
   border-color: var(--accent-primary);
+}
+
+.icon-btn.busy svg,
+.animate-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .icon-btn svg {
@@ -346,4 +360,84 @@ html, body {
 @keyframes slideUp {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* Real Progress Bar & Pill in Status Bar */
+.status-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-surface-active, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-primary);
+  animation: fadeIn 0.2s ease;
+  transition: all 0.3s ease;
+  max-width: 480px;
+}
+
+.status-progress-pill.finished {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.progress-bar-track {
+  width: 70px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent-primary, #3b82f6);
+  border-radius: 3px;
+  transition: width 0.25s ease-out;
+}
+
+.status-progress-pill.finished .progress-bar-fill {
+  background: #10b981;
+}
+
+.progress-percent {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--accent-primary, #3b82f6);
+  min-width: 28px;
+  flex-shrink: 0;
+}
+
+.status-progress-pill.finished .progress-percent {
+  color: #10b981;
+}
+
+.progress-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+  color: var(--text-secondary);
+}
+
+.spinner-sm {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

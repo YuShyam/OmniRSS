@@ -376,13 +376,15 @@ class TokenManager:
         return f"{prefix}{secrets.token_urlsafe(32)}"
 
     @classmethod
-    def verify_api_key(cls, provided_key: str, actual_key: str) -> bool:
+    def verify_api_key(cls, provided_key: Optional[str], actual_key: Optional[str]) -> bool:
         """常數時間比對 API Key 防範側信道攻擊 (Constant-time API Key verification).
 
         :param provided_key: 客戶端提供之金鑰 (Key provided by client)
         :param actual_key: 資料庫存儲之真實金鑰 (True key stored in DB)
         :return: 若完全相符則回傳 True
         """
+        if not provided_key or not actual_key:
+            return False
         return hmac.compare_digest(provided_key, actual_key)
 
     @classmethod

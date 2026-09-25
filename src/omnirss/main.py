@@ -22,6 +22,7 @@ from omnirss.api.routers import (
     feeds_router,
     plugins_router,
     rules_router,
+    tags_router,
 )
 from omnirss.core.database import get_db_manager
 from omnirss.core.scheduler import OmniScheduler
@@ -60,22 +61,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # 啟動非同步排程器
     logger.info("Starting background task scheduler...")
+    from omnirss.core.scheduler import set_global_scheduler
     _SCHEDULER = OmniScheduler(db_manager=db_mgr)
+    set_global_scheduler(_SCHEDULER)
     _SCHEDULER.start()
 
     yield
 
-    # 關機階段：優雅停止排程器並刷盤 SQLite WAL
+    # 關機階段：優雅停止排程器並取消所有爬蟲協程，然後刷盤 SQLite WAL
     if _SCHEDULER:
-        logger.info("Stopping background scheduler...")
-        _SCHEDULER.shutdown(wait=False)
+        logger.info("Stopping background scheduler and cancelling active tasks...")
+        try:
+            await _SCHEDULER.async_shutdown(timeout=1.0)
+        except Exception as e:
+            logger.warning(f"Error during async scheduler shutdown: {e}")
 
     logger.info("Executing SQLite WAL checkpoint (TRUNCATE)...")
-    async with db_mgr.get_connection() as conn:
-        try:
-            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-        except Exception as e:
-            logger.warning(f"WAL checkpoint warning on shutdown: {e}")
+    try:
+        async with asyncio.timeout(2.0):
+            async with db_mgr.get_connection() as conn:
+                try:
+                    await conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                except Exception as e:
+                    logger.warning(f"WAL checkpoint warning on shutdown: {e}")
+    except Exception as e:
+        logger.warning(f"WAL checkpoint timed out or skipped during shutdown: {e}")
     logger.info("OmniRSS shutdown sequence completed.")
 
 
@@ -135,6 +145,7 @@ async def health_check() -> dict:
 
 
 # 掛載領域路由控制器
+app.include_router(edge_router)
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(feeds_router)
@@ -142,9 +153,9 @@ app.include_router(feeds_router)
 app.include_router(articles_router)
 app.include_router(rules_router)
 app.include_router(plugins_router)
-app.include_router(edge_router)
 app.include_router(backup_router)
 app.include_router(assets_router)
+app.include_router(tags_router)
 
 # 掛載前端靜態資源與 SPA 介面 (Mount QuiteRSS 24px Web UI)
 from pathlib import Path

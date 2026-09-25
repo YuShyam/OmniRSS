@@ -116,3 +116,55 @@ async def test_scheduler_feed_polling_and_rules(tmp_path):
         f_row = await f_cur.fetchone()
         assert f_row["etag_header"] == '"mock-etag-1"'
         assert f_row["error_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_trigger_refresh_and_progress(tmp_path):
+    """測試手動觸發即時重新整理與即時進度追蹤機制 (Test manual trigger refresh and real-time progress tracking)."""
+    db_file = tmp_path / "test_refresh_prog.db"
+    db_mgr = DatabaseManager(str(db_file))
+    await db_mgr.initialize()
+
+    # 1. 建立 3 個測試頻道
+    async with db_mgr.get_connection() as conn:
+        for i, name in enumerate(["Alpha News", "Beta Tech", "Gamma Daily"], 1):
+            await conn.execute(
+                """
+                INSERT INTO feeds (title, feed_url, check_interval_minutes, is_paused)
+                VALUES (?, ?, 30, 0)
+                """,
+                (name, f"https://example.com/rss_{i}"),
+            )
+        await conn.commit()
+
+    class MockProgressCrawler:
+        async def fetch_feed(self, url, etag=None, last_modified=None, requires_flaresolverr=False):
+            return CrawlResult(
+                url=url,
+                status_code=200,
+                is_modified=True,
+                articles=[
+                    ArticleDTO(
+                        guid=f"art-{url}",
+                        url=f"{url}/article-1",
+                        title=f"Title for {url}",
+                        content_text="Sample content",
+                    )
+                ],
+            )
+
+    scheduler = OmniScheduler(db_manager=db_mgr, crawler_engine=MockProgressCrawler())
+
+    # 2. 觸發手動更新
+    res = await scheduler.trigger_refresh()
+    assert res["refreshed_count"] == 3
+    assert res["total_attempted"] == 3
+    assert res["new_articles"] == 3
+
+    # 3. 檢查進度物件重設狀態
+    prog = scheduler.get_refresh_progress()
+    assert prog["is_running"] is False
+    assert prog["current_feed"] == ""
+    assert prog["completed"] == 3
+    assert prog["new_articles"] == 3
+

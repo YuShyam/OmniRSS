@@ -101,18 +101,88 @@ async def test_feeds_and_articles_api(tmp_path):
         star_res = await ac.put(f"/api/articles/{a1_id}/star?is_starred=true", headers=headers)
         assert star_res.status_code == 200
 
-        # 7. 短詞搜尋測試 (驗證短詞 LIKE 與 FTS 雙軌)
+        # 7. 短詞與中括號特殊詞搜尋測試 (驗證短詞 LIKE 與 FTS5 雙軌)
         search_short = await ac.get("/api/articles?search=Py", headers=headers)
         assert search_short.status_code == 200
         assert search_short.json()["total"] >= 1
 
-        # 8. 分類更新 (名稱與獨立保留天數)
-        cat_update_res = await ac.put(f"/api/categories/{cat_id}", json={"name": "深度科技", "custom_retention_days": 14}, headers=headers)
+        search_cjk = await ac.get("/api/articles?search=[測試]", headers=headers)
+        assert search_cjk.status_code == 200
+
+        # 8. 分類更新 (名稱、獨立保留天數、獨立抓取頻率連動測試)
+        cat_update_res = await ac.put(
+            f"/api/categories/{cat_id}",
+            json={"name": "深度科技", "custom_retention_days": 14, "custom_interval_minutes": 15},
+            headers=headers,
+        )
         assert cat_update_res.status_code == 200
         assert cat_update_res.json()["name"] == "深度科技"
         assert cat_update_res.json()["custom_retention_days"] == 14
+        assert cat_update_res.json()["custom_interval_minutes"] == 15
+
+        # 驗證該分類底下的 feed check_interval_minutes 已被級聯更新為 15
+        async with db_mgr.get_connection() as conn:
+            f_row = await (await conn.execute("SELECT check_interval_minutes FROM feeds WHERE id = ?", (feed_id,))).fetchone()
+            assert f_row["check_interval_minutes"] == 15
+
+        # 8.5 取得即時抓取進度端點
+        prog_res = await ac.get("/api/feeds/refresh/progress", headers=headers)
+        assert prog_res.status_code == 200
+        prog_data = prog_res.json()
+        assert "is_running" in prog_data
+        assert "completed_feeds" in prog_data
+        assert "total_feeds" in prog_data
 
         # 9. 批次全站標記已讀
         batch_res = await ac.put("/api/articles/mark-all-read", json={"scope": "all"}, headers=headers)
         assert batch_res.status_code == 200
         assert batch_res.json()["marked_count"] >= 1
+
+        # 10. 測試頻道 auto_full_text 更新與取得
+        feed_update_res = await ac.put(
+            f"/api/feeds/{feed_id}",
+            json={"auto_full_text": True},
+            headers=headers,
+        )
+        assert feed_update_res.status_code == 200
+
+        tree_res = await ac.get("/api/feeds/tree", headers=headers)
+        assert tree_res.status_code == 200
+        tree_categories = tree_res.json()["categories"]
+        target_feed = None
+        for cat in tree_categories:
+            for f in cat["feeds"]:
+                if f["id"] == feed_id:
+                    target_feed = f
+                    break
+        assert target_feed is not None
+        assert target_feed["auto_full_text"] is True
+
+        # 11. 測試訂閱源屬性詳細取得與更新 (包含 min_publish_date, auth)
+        detail_feed_res = await ac.get(f"/api/feeds/{feed_id}", headers=headers)
+        assert detail_feed_res.status_code == 200
+        feed_prop_data = detail_feed_res.json()
+        assert feed_prop_data["id"] == feed_id
+        assert "min_publish_date" in feed_prop_data
+
+        feed_prop_update_res = await ac.put(
+            f"/api/feeds/{feed_id}",
+            json={
+                "min_publish_date": "2026-01-01 00:00:00",
+                "auth_username": "myuser",
+                "auth_password": "mypassword",
+            },
+            headers=headers,
+        )
+        assert feed_prop_update_res.status_code == 200
+
+        # 12. 測試 POST /api/feeds/test-url 端點
+        test_url_res = await ac.post(
+            "/api/feeds/test-url",
+            json={"feed_url": "https://tech.example.com/rss", "requires_flaresolverr": False},
+            headers=headers,
+        )
+        assert test_url_res.status_code == 200
+        test_url_data = test_url_res.json()
+        assert "status" in test_url_data
+
