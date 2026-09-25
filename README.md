@@ -87,23 +87,38 @@ OmniRSS/
 │       │   ├── models.py
 │       │   ├── base_plugin.py
 │       │   └── context.py
-│       ├── core/               # 儲存底座、資安網關、外掛管理器、熔斷器
-│       │   ├── config.py
-│       │   ├── database.py
-│       │   ├── security.py
-│       │   ├── circuit_breaker.py
-│       │   ├── plugin_manager.py
-│       │   ├── image_vault.py
-│       │   └── i18n.py
-│       ├── api/                # FastAPI 路由控制器
-│       └── web/                # 前端介面 (原生 ES6 + CSS Tokens)
-├── plugins/                    # 外掛目錄 (可直接放入自訂外掛)
-│   ├── sources/                # 來源外掛
-│   ├── processors/             # 處理外掛
+│       ├── core/               # 核心引擎、儲存底座、資安網關、外掛管理器
+│       │   ├── crawler_engine.py   # 高韌性 304 爬蟲引擎與指紋輪替
+│       │   ├── database.py         # SQLite WAL 連線池、Trigram FTS5 與觸發器
+│       │   ├── rule_engine.py      # QuiteRSS 條件過濾與動作分發規則引擎
+│       │   ├── scheduler.py        # 非同步定時排程循環與並行限制
+│       │   ├── security.py         # Anti-SSRF 網關、Argon2id 認證與 nh3 清洗
+│       │   ├── backup_engine.py    # OPML 2.0 雙向階層備份與設定脫敏
+│       │   ├── plugin_manager.py   # 動態外掛載入、設定疊加與熔斷機制
+│       │   ├── circuit_breaker.py  # 5 次錯誤自動熔斷保護器
+│       │   ├── image_vault.py      # SHA-256 WebP 圖片去重儲存庫
+│       │   ├── i18n.py             # 後端多國語系翻譯器
+│       │   └── config.py           # 系統組態配置管理器
+│       ├── api/                # FastAPI 路由控制器與資料模型
+│       │   ├── dependencies.py     # JWT/金鑰鑑權、速率限制依賴
+│       │   ├── schemas.py          # Pydantic v2 DTO 介面規範
+│       │   └── routers/            # 領域子路由 (auth, feeds, articles, tags, rules, plugins...)
+│       ├── web/                # QuiteRSS 24px 前端介面 (原生 ES6 + CSS Tokens + PWA)
+│       │   ├── index.html
+│       │   ├── css/            # 模組化樣式 (tokens, layout, list, reader, modals, tree)
+│       │   └── js/             # 前端元件 (app, state, api_client, i18n, keybindings, components...)
+│       └── main.py             # FastAPI 應用入口與 Lifespan 管理
+├── plugins/                    # 官方與自訂外掛目錄
+│   ├── sources/                # 來源外掛 (generic_scraper, gomaji)
+│   ├── processors/             # 處理外掛 (gemini_summary, simhash_dedup)
 │   └── actions/                # 動作外掛
+├── extensions/                 # 瀏覽器隨附擴充套件
+│   └── chrome/                 # Chrome MV3 擴充套件 (Web Clipper 與邊緣中繼)
 ├── layouts/                    # 前端 CSS Grid 插槽版型設定
-├── tests/                      # 單元測試套件 (pytest)
+├── scripts/                    # 驗證與維運工具腳本
+├── tests/                      # 自動化單元測試套件 (pytest)
 ├── docs/                       # 詳細架構規格書與技術手冊
+├── Caddyfile                   # Caddy 2 自動 HTTPS 反向代理設定
 ├── Dockerfile                  # 容器映像檔構建檔
 ├── docker-compose.yml          # Docker Compose 部署設定
 ├── requirements.txt            # Python 依賴清單
