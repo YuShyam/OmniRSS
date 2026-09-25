@@ -2,8 +2,8 @@
 
 > **專案名稱**：OmniRSS (開源微核心 RSS 智慧閱讀器、自動全文提取與擴充插件生態平台)  
 > **版本**：v1.2.0 (Plugin Observability & Dual Sandbox Edition)  
-> **日期**：2026/09/22  
-> **狀態**：規劃中 (Planning)  
+> **日期**：2026/09/25  
+> **狀態**：已完成 / 生產就緒 (Completed & Production-Ready)  
 > **開源授權**：MIT License  
 > **規格書文件路徑**：`docs/SPEC.md`
 
