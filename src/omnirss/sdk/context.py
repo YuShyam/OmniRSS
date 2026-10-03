@@ -20,6 +20,7 @@ class PluginContext:
         config: dict[str, Any],
         user_id: Optional[int] = None,
         http_client: Optional[Any] = None,
+        action_param: Optional[str] = None,
     ) -> None:
         """初始化外掛上下文 (Initialize plugin context).
 
@@ -27,11 +28,13 @@ class PluginContext:
         :param config: 生效之完整設定 (Effective merged configuration)
         :param user_id: 觸發此任務的使用者 ID (Triggering user ID if any)
         :param http_client: 注入之安全 HTTP 客戶端 (Injected Anti-SSRF HTTP client)
+        :param action_param: 規則或動作調用時傳入之通用參數 (Generic action parameter)
         """
         self.plugin_id = plugin_id
         self.config = config
         self.user_id = user_id
         self._http_client = http_client
+        self.action_param = action_param
         self.logger = logger.bind(plugin_id=plugin_id, user_id=user_id)
 
     @property

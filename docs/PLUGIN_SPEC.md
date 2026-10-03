@@ -22,7 +22,7 @@ flowchart TD
     subgraph Slot1 ["1. Source 來源槽 (爬蟲與資料擷取)"]
         RSSSource["標準 RSS/Atom 引擎"]
         GenericSrc["通用 Web/JSON 爬蟲"]
-        GomajiSrc["Gomaji 優惠情報爬蟲"]
+        CustomSrc["自訂擴充爬蟲 (外掛插槽)"]
     end
 
     subgraph Slot2 ["2. Processor 處理槽 (後處理管線)"]
@@ -221,14 +221,13 @@ class BaseActionPlugin(ABC):
 
 ---
 
-### 4.2 `Gomaji 優惠情報爬蟲` (`plugins/sources/gomaji/`)
-* **Slot**: `Source`
-* **目標**：爬取 Gomaji 特定餐飲或旅宿特價折價券情報。
-* **輸入參數**：`city_id` (例如 1: 台北), `category_id` (例如 2: 美食餐廳), `min_discount_rate` (例如 5 折以下)。
-* **輸出**：
-  - `title`：`【台北寒舍艾美】平日午晚餐吃到飽雙人券 - 破盤 6.5 折`
-  - `url`：`https://www.gomaji.com/deal-p12345`
-  - `snippet`：原價、特價、折扣趴數與餐廳位址。
+### 4.2 `PTT 與 Yahoo 內容體驗增強外掛` (`plugins/processors/ptt_enhancer/`, `yahoo_enhancer/`)
+* **Slot**: `Processor` (公開發行標準外掛)
+* **目標**：提升台灣主流社群與入口網站正文閱讀體驗。
+* **特性**：
+  - **PTT Enhancer**：自動修復推文純文字 Imgur 圖片直連展示、還原作者個人看板連結、自動摺疊冗長推文。
+  - **Yahoo Enhancer**：還原 `data-src` / `data-original` 延遲載入 (Lazyload) 高解析度原圖，清理導流贅字。
+* *(註：私人特定網站爬蟲如 Gomaji、Eatgether 屬未實測或個人私有擴充，已自公開庫排除並納入 `.git/info/exclude` 保護，確保開源版本乾淨純粹).*
 
 ---
 
@@ -297,7 +296,7 @@ stateDiagram-v2
 $$\text{EffectiveConfig} = \text{ManifestDefault} \oplus \text{GlobalConfig} \oplus \text{UserConfig}$$
 
 ```python
-# SDK 運行時自動合併，外掛開發者 0 額外代碼負擔：
+# SDK 運行時自動合併，外掛開發者 0 額外程式碼負擔：
 class BaseProcessorPlugin:
     def get_effective_config(self, user_id: int) -> dict:
         manifest_default = self.manifest.get("default_config", {})
@@ -315,6 +314,6 @@ class BaseProcessorPlugin:
 1. **目錄路徑綁定 (Path Binding)**：
    - 若不同資料夾嘗試宣告已存在的 `plugin_id`，微核心一律判定為「非法冒名衝突 (Identity Spoofing)」，直接拒絕載入並在 UI 顯示衝突警示。
 2. **作者與數位指紋校驗 (Author Integrity)**：
-   - 初次安裝記錄作者與代碼 SHA-256 雜湊，防止未經授權的代碼偷換。
+   - 初次安裝記錄作者與程式碼 SHA-256 雜湊，防止未經授權的程式碼竄改。
 3. **絕無靜默自動升級 (No Silent Upgrade)**：
-   - 即使版本號寫為 `9999.0.0`，系統**絕不自動覆蓋代碼**，必須由超級管理員在 Web UI 手動檢閱變更並主動點擊「授權升級」方可生效。
+   - 即使版本號寫為 `9999.0.0`，系統**絕不自動覆蓋程式碼**，必須由超級管理員在 Web UI 手動檢閱變更並主動點擊「授權升級」方可生效。

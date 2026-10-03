@@ -3,7 +3,7 @@
 > **專案名稱**：OmniRSS (開源微核心 RSS 智慧閱讀器、自動全文提取與擴充插件生態平台)  
 > **版本**：v1.2.0 (Plugin Observability & Dual Sandbox Edition)  
 > **日期**：2026/09/25  
-> **狀態**：已完成 / 生產就緒 (Completed & Production-Ready)  
+> **狀態**：已完成 / 自用穩定 (Completed & Self-Hosted Stable)《實際已延伸至 Phase 11 (v2.1)》  
 > **開源授權**：MIT License  
 > **規格書文件路徑**：`docs/SPEC.md`
 
@@ -13,7 +13,7 @@
 
 OmniRSS 是專為 20 年以上資深 RSS 重度使用者打造的現代化開源平替方案。我們遵循 **「微核心 (Microkernel) + 外掛插件生態系 (Plugin Ecosystem)」** 的設計哲學：
 
-> **主程序只做裁判、不做球員**：官方團隊只專注維護極致輕量、穩定抗肥大的「微核心引擎」與「插槽協定」；所有客製化網站爬蟲、AI 加工模型、排版主題與外部匯出動作，全部開放給社群以插件形式隨插即用（Drop-in）。
+> **主程序只做裁判、不做球員**：官方團隊專注維護輕量、穩定抗膨脹的「微核心引擎」與「插槽協定」；所有客製化網站爬蟲、AI 加工模型、排版主題與外部匯出動作，全部開放給社群以插件形式隨插即用（Drop-in）。
 
 ```mermaid
 graph TD
@@ -33,7 +33,7 @@ graph TD
     end
 
     subgraph Community_Ecosystem["4 大標準社群插件插槽 (Community Plugin Slots)"]
-        S1["① 來源插件 (Source Plugins)<br>標準 RSS + Eatgether / Gomaji / PTT / Threads"]
+        S1["① 來源插件 (Source Plugins)<br>標準 RSS + JSON API / HTML 爬蟲 / 自訂來源"]
         S2["② 處理插件 (Processor Plugins)<br>Gemini 摘要 / 全文提取 / 簡繁轉換 / 降噪"]
         S3["③ 版面插件 (Layout & Themes)<br>QuiteRSS 經典三欄 / 雜誌流 / 暗黑主題"]
         S4["④ 動作插件 (Action / Exporters)<br>匯出 Obsidian / 推播 LINE & TG / Readwise"]
@@ -52,7 +52,7 @@ graph TD
 | 層級 (Layer) | 選用技術 | 選型原因與開源優勢 |
 | :--- | :--- | :--- |
 | **後端核心** | **Python 3.12+ (FastAPI + Asyncio)** | 高效能非同步 API、極速開發社群外掛、型別提示完整 (Pydantic) |
-| **外掛 SDK** | **`omnirss.sdk` (標準 DTO 與 Hook 介面)** | 提供社群開發者 10 行代碼即可上手的抽象類別與宣告式 Manifest |
+| **外掛 SDK** | **`omnirss.sdk` (標準 DTO 與 Hook 介面)** | 提供社群開發者 10 行程式碼即可上手的抽象類別與宣告式 Manifest |
 | **排程引擎** | **APScheduler + Asyncio HTTP Client** | 支援動態熱註冊 Cron Job、內建 ETag / 304 條件式快取請求 |
 | **儲存底座** | **SQLite 3 (WAL 模式 + FTS5 全文索引)** | 零配置、單檔可攜、毫秒級全文檢索、冷熱資料庫解耦、抗卡頓 |
 | **圖庫去重** | **Content-Addressable Storage (SHA-256 WebP)** | 實體圖檔自動去重轉檔，資料庫僅存路徑，磁碟節省 60% |
@@ -70,16 +70,16 @@ graph TD
 每個外掛目錄必須具備 `plugin.json`：
 ```json
 {
-  "id": "omnirss-plugin-eatgether",
-  "name": "Eatgether 聚會來源外掛",
+  "id": "omnirss/generic-api-source",
+  "name": "通用 JSON API 來源外掛",
   "version": "1.0.0",
-  "author": "TechLead",
+  "author": "OmniRSS Core Team",
   "type": "source",
-  "description": "自動抓取 Eatgether 聚會活動，產出結構化圖文文章",
-  "entrypoint": "main:EatgetherPlugin",
+  "description": "自動請求遠端 REST/JSON API 並轉換為結構化 RSS 文章",
+  "entrypoint": "main:GenericApiPlugin",
   "permissions": ["network:http"],
   "settings_schema": {
-    "city": { "type": "string", "default": "台北市", "label": "預設抓取城市" },
+    "api_endpoint": { "type": "string", "default": "https://api.example.com/items", "label": "API 端點網址" },
     "interval_minutes": { "type": "integer", "default": 30, "label": "更新頻率(分)" }
   }
 }
@@ -94,15 +94,15 @@ graph TD
   ```python
   from omnirss.sdk import BaseSourcePlugin, ArticleDTO
   
-  class EatgetherPlugin(BaseSourcePlugin):
+  class GenericApiPlugin(BaseSourcePlugin):
       async def fetch(self, config: dict) -> list[ArticleDTO]:
-          response = await self.http_get(f"https://api.eatgether.com/meetups?city={config['city']}")
+          response = await self.http_get(config.get("api_endpoint", "https://api.example.com/items"))
           return [
               ArticleDTO(
-                  uid=f"eg_{item['id']}",
-                  title=f"[{item['payment']}] {item['title']}",
-                  link=item['share_url'],
-                  content_html=item['description'],
+                  uid=f"item_{item['id']}",
+                  title=item['title'],
+                  link=item['url'],
+                  content_html=item['content'],
                   author=item['host_name'],
                   published_at=item['created_at'],
                   cover_image_url=item.get('cover_image')
@@ -194,7 +194,7 @@ flowchart LR
 
 ## 5. 雙重防毒與沙箱隔離機制 (Dual-Layer Anti-Malware & Sandbox Defense)
 
-針對外部網站的「木馬/惡意腳本」與社群插件的「惡意代碼」，系統建構兩大縱深防禦戰場：
+針對外部網站的「木馬/惡意腳本」與社群插件的「惡意程式碼」，系統建構兩大縱深防禦戰場：
 
 ```mermaid
 flowchart TD
@@ -205,7 +205,7 @@ flowchart TD
         SandboxedIframe --> SafeRead["純淨靜態圖文 (木馬完全失去執行能力)"]
     end
 
-    subgraph Layer2["戰場 2: 第三方外掛代碼隔離 (Plugin Execution Sandbox)"]
+    subgraph Layer2["戰場 2: 第三方外掛程式碼隔離 (Plugin Execution Sandbox)"]
         PluginCode["社群開發的 Python 外掛"] --> TimeoutTrap["1. 30 秒超時硬中斷 (Timeout Guard)"]
         TimeoutTrap --> FaultTrap["2. 獨立例外捕捉 (Fault Trap - 核心零崩潰)"]
         FaultTrap --> SSRFFirewall["3. 核心 Anti-SSRF 防火牆 (阻斷內網與雲端 Metadata)"]
@@ -335,18 +335,34 @@ data/
 
 ## 8. 開發里程碑與實作計畫 (Milestones)
 
-- [ ] **Phase 1: 微核心底座、Plugin SDK 與安全防護**
+- [x] **Phase 1: 微核心底座、Plugin SDK 與安全防護**
   - 建置 `omnirss.sdk`（定義 `ArticleDTO`、`PluginManifest`、`BasePlugin` 抽象類別）。
   - 建置 `PluginManager` & `telemetry.py`（動態加載、效能監控、超時限制、自動熔斷）。
   - 建置 `security.py`（Anti-SSRF 網路網關 + `nh3` HTML 脫毒清洗器 + Zero-Script CSP 標頭）。
   - 建置 `database.py`（SQLite WAL 冷熱分離 + 圖片 SHA-256 WebP 去重儲存）。
-- [ ] **Phase 2: 核心排程器與標準 RSS 爬蟲**
+- [x] **Phase 2: 核心排程器與標準 RSS 爬蟲**
   - APScheduler 非同步排程 + ETag / 304 條件請求。
-- [ ] **Phase 3: 官方範例插件移植與驗證**
-  - 來源外掛：移植 `Eatgether` 與 `Gomaji`（驗證自訂來源能順暢進庫）。
-  - 處理外掛：實作 `Gemini Flash AI 摘要` 插件。
-- [ ] **Phase 4: 前端 Slot 引擎、QuiteRSS 三欄與插件儀表板**
+- [x] **Phase 3: 官方範例插件移植與驗證**
+  - 來源外掛：實作 `通用爬蟲 (generic_scraper)`（開源公開範例，支援宣告式 CSS Selector / JSON 萃取）。
+  - [ ] 來源外掛：`Gomaji` 與 `Eatgether`（私人外掛，Gomaji 尚未實測且 Eatgether 屬個人擴充，已自開源庫排除）。
+  - 處理外掛（經一週實測穩定上線）：
+    - `PTT Enhancer`（PTT BBS 圖文、作者動態與推文網址還原）
+    - `Yahoo Enhancer`（Yahoo 懶加載圖片還原）
+    - `Gemini Flash AI 摘要`（Gemini 繁中摘要瀑布流）
+- [x] **Phase 4: 前端 Slot 引擎、QuiteRSS 三欄與插件儀表板**
   - CSS Grid 插槽渲染器（`SlotEngine`）+ 鍵盤流快捷鍵（`J`/`K`/`Space`/`M`/`S`/`A`/`T`）。
   - 前端「插件管理中心 (Plugin Center)」面板（即時開關、耗時圖表、錯誤 Log 展開）。
-- [ ] **Phase 5: 開源生態拋光與 Docker 一鍵部署**
+- [x] **Phase 5: 開源生態拋光與 Docker 一鍵部署**
   - 撰寫 `CONTRIBUTING.md` 外掛開發範例教學 + 撰寫 `docker-compose.yml` + 多平台相容測試。
+- [x] **Phase 6: 個人帳號安全與使用者管理權限系統**
+  - 密碼變更、Admin 使用者管理與獨立彈窗介面。
+- [x] **Phase 7: 微核心萬用外掛生態與動態擴充插槽**
+  - 通用文章處理端點、動態表單繪製與閱讀器 AI 摘要按鈕。
+- [x] **Phase 8: 閱讀器 [ ⊞ ] 自選按鈕、字級縮放與全站按鈕接線**
+  - 閱讀器自選工具列、A-/A+ 字級縮放、清空資料庫與全站按鈕事件綁定。
+- [x] **Phase 9: 微核心純粹化、外掛多語系獨立與 Gemini 繁中防線**
+  - 核心與外掛設定解耦、外掛獨立 i18n 字典與 Gemini Flash 繁體中文保證。
+- [x] **Phase 10: 高並行 CPU 運算分離與單一頻道流水線解耦**
+  - 檔案解析背景化、`FeedPipeline` 獨立模組與 SQLite mmap 讀寫優化。
+- [x] **Phase 11: 外掛多階升階推薦鏈與宣告式二級子動作**
+  - 狀態感知多階推薦、`actions` 宣告式二級選單與客觀資訊整理範本。

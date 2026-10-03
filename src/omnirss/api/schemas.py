@@ -6,7 +6,7 @@ strictly aligning with the API Contract in docs/API_CONTRACT.md.
 
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # =============================================================================
@@ -60,6 +60,42 @@ class UserSettingsUpdateRequest(BaseModel):
     settings: dict[str, Any] = Field(description="用戶偏好設定字典")
 
 
+class ChangePasswordRequest(BaseModel):
+    """使用者修改自身密碼請求 (Change Password Request)."""
+
+    old_password: str = Field(min_length=1, description="目前舊密碼")
+    new_password: str = Field(min_length=6, description="新設定密碼 (至少6字元)")
+
+
+class UserCreateRequest(BaseModel):
+    """管理員建立新使用者請求 (Admin Create User Request)."""
+
+    username: str = Field(min_length=3, max_length=50, description="新使用者帳號名稱")
+    password: str = Field(min_length=6, description="新使用者初始密碼 (至少6字元)")
+    is_admin: bool = Field(default=False, description="是否賦予超級管理員權限")
+
+
+class UserAdminUpdateRequest(BaseModel):
+    """管理員更新使用者請求 (Admin Update User Request)."""
+
+    is_admin: Optional[bool] = Field(default=None, description="變更是否為超級管理員")
+    new_password: Optional[str] = Field(default=None, min_length=6, description="強制重設新密碼")
+
+
+class UserListItemDTO(BaseModel):
+    """管理員查看之使用者清單項目 (User List Item DTO)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    is_admin: bool
+    api_key: str
+    created_at: datetime
+    feed_count: int = Field(default=0, description="訂閱頻道數量")
+    unread_count: int = Field(default=0, description="未讀文章數量")
+
+
 
 # =============================================================================
 # 2. 分類與訂閱源相關模型 (Categories & Feeds Models)
@@ -76,9 +112,10 @@ class CategoryDTO(BaseModel):
     custom_interval_minutes: Optional[int] = None
     custom_min_date: Optional[str] = None
     force_min_date: bool = False
+    auto_full_text: bool = False
     is_paused: bool = False
     filter_rules: Optional[str] = None
-    view_preferences: Optional[dict[str, Any]] = None
+    view_preferences: Optional[Any] = None
 
 
 class CategoryStatsDTO(BaseModel):
@@ -103,6 +140,8 @@ class CategoryCreateRequest(BaseModel):
     custom_interval_minutes: Optional[int] = Field(default=None, ge=5, le=10080, description="分類專屬更新頻率 (分鐘)")
     custom_min_date: Optional[str] = Field(default=None, description="文章收錄起始時間 (YYYY-MM-DD 或 ISO 格式)")
     force_min_date: bool = Field(default=False, description="是否強制向下套用至該分類下所有來源")
+    auto_full_text: bool = Field(default=False, description="是否自動抓取全文與展開推文/圖片")
+    view_preferences: Optional[Any] = Field(default=None, description="分類專屬視圖與過濾偏好 (字典或 JSON 字串)")
 
 
 class CategoryUpdateRequest(BaseModel):
@@ -114,9 +153,10 @@ class CategoryUpdateRequest(BaseModel):
     custom_interval_minutes: Optional[int] = None
     custom_min_date: Optional[str] = None
     force_min_date: Optional[bool] = None
+    auto_full_text: Optional[bool] = None
     is_paused: Optional[bool] = None
     filter_rules: Optional[str] = None
-    view_preferences: Optional[dict[str, Any]] = None
+    view_preferences: Optional[Any] = Field(default=None, description="分類專屬視圖與過濾偏好 (字典或 JSON 字串)")
 
 
 class RefreshProgressDTO(BaseModel):
@@ -214,6 +254,12 @@ class FeedTreeCategoryDTO(BaseModel):
     name: str
     sort_order: int = 0
     unread_count: int = 0
+    custom_retention_days: Optional[int] = None
+    custom_interval_minutes: Optional[int] = None
+    custom_min_date: Optional[str] = None
+    force_min_date: bool = False
+    auto_full_text: bool = False
+    view_preferences: Optional[Any] = None
     feeds: list[FeedTreeItemDTO] = Field(default_factory=list)
 
 
@@ -248,7 +294,10 @@ class ArticleListItemDTO(BaseModel):
     is_read: bool
     is_unread: bool = False
     is_starred: bool
+    highlight_color: Optional[str] = None
     tags: list[dict[str, Any]] = Field(default_factory=list)
+    applied_plugins: list[str] = Field(default_factory=list, description="已套用此外掛 ID 清單")
+    duplicate_feeds: Optional[list[str]] = Field(default=None, description="跨頻道相同文章之其他來源頻道名稱")
 
 
 class ArticleDetailDTO(ArticleListItemDTO):
@@ -282,11 +331,31 @@ class MarkReadBatchRequest(BaseModel):
 class RuleCreateRequest(BaseModel):
     """建立過濾規則請求 (Create Filter Rule Request)."""
 
-    name: str = Field(min_length=1, max_length=100, description="規則名稱")
+    name: str = Field(default="自訂過濾規則", min_length=1, max_length=100, description="規則名稱")
     sort_order: int = Field(default=0, description="優先權排序")
     is_enabled: bool = Field(default=True, description="是否啟用")
-    conditions: list[dict[str, Any]] | dict[str, Any] = Field(description="比對條件清單或物件")
-    actions: list[dict[str, Any]] = Field(description="執行動作清單")
+    scope_type: str = Field(default="all", description="'all', 'category', 或 'feeds'")
+    scope_category_id: Optional[int] = Field(default=None, description="所屬分類 ID")
+    scope_feed_ids: list[int] = Field(default_factory=list, description="多來源頻道 ID 清單")
+    match_mode: str = Field(default="all", description="條件組合邏輯 ('all' 或 'any')")
+    conditions: Optional[list[dict[str, Any]] | dict[str, Any]] = Field(default=None, description="比對條件清單或物件 (向後相容)")
+    condition_groups: Optional[list[dict[str, Any]]] = Field(default=None, description="QuiteRSS v2 階層條件群組")
+    actions: list[dict[str, Any]] = Field(default_factory=list, description="執行動作清單")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_rule_create(cls, data: Any) -> Any:
+        """防衛性相容別名欄位 (Defensively normalize field aliases)."""
+        if isinstance(data, dict):
+            if "name" not in data or not data["name"]:
+                data["name"] = data.get("rule_name") or data.get("title") or "自訂過濾規則"
+            if "sort_order" not in data:
+                data["sort_order"] = data.get("priority", 0)
+            if "is_enabled" not in data:
+                data["is_enabled"] = data.get("is_active", True)
+            if "scope_type" not in data:
+                data["scope_type"] = data.get("scope", "all")
+        return data
 
 
 class RuleUpdateRequest(BaseModel):
@@ -295,7 +364,12 @@ class RuleUpdateRequest(BaseModel):
     name: Optional[str] = None
     sort_order: Optional[int] = None
     is_enabled: Optional[bool] = None
+    scope_type: Optional[str] = None
+    scope_category_id: Optional[int] = None
+    scope_feed_ids: Optional[list[int]] = None
+    match_mode: Optional[str] = None
     conditions: Optional[list[dict[str, Any]] | dict[str, Any]] = None
+    condition_groups: Optional[list[dict[str, Any]]] = None
     actions: Optional[list[dict[str, Any]]] = None
 
 
@@ -306,9 +380,14 @@ class RuleResponseDTO(BaseModel):
     name: str
     sort_order: int
     is_enabled: bool
-    conditions: list[dict[str, Any]] | dict[str, Any]
-    actions: list[dict[str, Any]]
-    hit_count: int
+    scope_type: str = "all"
+    scope_category_id: Optional[int] = None
+    scope_feed_ids: list[int] = Field(default_factory=list)
+    match_mode: str = "all"
+    conditions: list[dict[str, Any]] | dict[str, Any] = Field(default_factory=list)
+    condition_groups: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    hit_count: int = 0
     created_at: datetime
 
 
@@ -350,7 +429,7 @@ class PluginTelemetryDTO(BaseModel):
     """外掛遙測與監控資料模型 (Plugin Telemetry DTO)."""
 
     plugin_id: str
-    name: str
+    name: str | dict[str, str]
     version: str
     slot_type: str
     is_enabled: bool
@@ -361,12 +440,39 @@ class PluginTelemetryDTO(BaseModel):
     consecutive_errors: int
     avg_duration_ms: int
     last_error_message: Optional[str] = None
+    last_error_traceback: Optional[str] = None
+    description: Optional[str | dict[str, str]] = None
+    author: Optional[str] = None
+    config_schema: Optional[dict[str, Any]] = None
+    default_config: Optional[dict[str, Any]] = None
+    user_config: Optional[dict[str, Any]] = None
+    match_patterns: list[str] = Field(default_factory=list, description="宣告支援的網址比對模式")
+    badge: Optional[dict[str, Any]] = Field(default=None, description="外掛表徵元資料，供 UI 動態顯示徽章")
+
 
 
 class PluginConfigUpdateRequest(BaseModel):
     """更新外掛私有設定請求 (Update Plugin Private Config)."""
 
     config: dict[str, Any] = Field(description="外掛私有配置字典")
+
+
+class PluginExecutionLogDTO(BaseModel):
+    """外掛執行明細日誌模型 (Plugin Execution Log DTO)."""
+
+    id: int
+    plugin_id: str
+    user_id: Optional[int] = None
+    article_id: Optional[int] = None
+    article_title: Optional[str] = None
+    trigger_source: str = "manual"
+    action_param: Optional[str] = None
+    status: str
+    duration_ms: int = 0
+    output_preview: Optional[str] = None
+    error_message: Optional[str] = None
+    error_traceback: Optional[str] = None
+    executed_at: str
 
 
 # =============================================================================

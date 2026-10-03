@@ -20,6 +20,23 @@ from omnirss.api.schemas import (
 router = APIRouter(prefix="/api/articles", tags=["Articles"])
 
 
+def detect_applied_plugins(url: str = "", html: str = "", ai_summary: Optional[str] = None) -> list[str]:
+    """檢測文章實際套用之外掛清單 (Detect plugins actually executed on article content)."""
+    plugins: list[str] = []
+    html_str = html or ""
+    # 根據 DOM 實際含有外掛加工特徵 class 判斷
+    if "ptt-meta-card" in html_str or "ptt-pushes-card" in html_str or "ptt-article-content" in html_str:
+        plugins.append("omnirss/ptt-enhancer")
+    if "m01-article" in html_str or "m01-figure" in html_str or "m01-quote" in html_str:
+        plugins.append("omnirss/mobile01-enhancer")
+    if "yh-article" in html_str or "yh-figure" in html_str or "yh-body" in html_str or "caas-body" in html_str:
+        plugins.append("omnirss/yahoo-enhancer")
+    if ai_summary and len(ai_summary.strip()) > 0:
+        plugins.append("omnirss/gemini-summary")
+    return plugins
+
+
+
 @router.get("", response_model=ArticleListResponseDTO)
 async def list_articles(
     feed_id: Optional[int] = Query(None, description="依特定頻道過濾"),
@@ -86,7 +103,7 @@ async def list_articles(
         params.append(1 if is_starred else 0)
 
     search_kw = q or search
-    if search_kw and search_kw.strip():
+    if search_kw and search_kw.strip() and search_kw.strip().lower() not in ("null", "undefined"):
         kw = search_kw.strip()
         if len(kw) >= 3:
             # 長詞 (>=3 字元) 使用 FTS5 Trigram 倒排索引 + LIKE 容錯
@@ -112,33 +129,67 @@ async def list_articles(
     actual_limit = limit if limit is not None else page_size
     actual_offset = offset if offset is not None else (page - 1) * page_size
 
-    # 1. 計算總筆數 (Count total)
-    count_sql = f"""
-        SELECT COUNT(*) as total
-        FROM articles_hot a
-        JOIN user_feeds uf ON a.feed_id = uf.feed_id
-        LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
-        {where_clause}
-    """
+    if feed_id is not None:
+        # 1. 指定單一頻道時：直查無須跨頻道去重
+        count_sql = f"""
+            SELECT COUNT(*) as total
+            FROM articles_hot a
+            JOIN user_feeds uf ON a.feed_id = uf.feed_id
+            LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
+            {where_clause}
+        """
+        query_sql = f"""
+            SELECT a.id, a.feed_id, COALESCE(uf.custom_title, f.title) as feed_title,
+                   uf.category_id, c.name as category_name,
+                   a.title, a.url, a.author, a.snippet, a.cover_image_url, a.published_at,
+                   COALESCE(uas.is_read, 0) as is_read,
+                   COALESCE(uas.is_starred, 0) as is_starred,
+                   uas.highlight_color,
+                   a.content_html,
+                   a.ai_summary,
+                   NULL as all_feed_titles
+            FROM articles_hot a
+            JOIN feeds f ON a.feed_id = f.id
+            JOIN user_feeds uf ON a.feed_id = uf.feed_id
+            LEFT JOIN categories c ON uf.category_id = c.id
+            LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
+            {where_clause}
+            ORDER BY {sort_column} {sort_order}
+            LIMIT ? OFFSET ?
+        """
+    else:
+        # 2. 全站或分類視角：以標準化 URL 執行跨頻道展示層去重聚合
+        count_sql = f"""
+            SELECT COUNT(DISTINCT rtrim(a.url, '/')) as total
+            FROM articles_hot a
+            JOIN user_feeds uf ON a.feed_id = uf.feed_id
+            LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
+            {where_clause}
+        """
+        query_sql = f"""
+            SELECT a.id, a.feed_id, COALESCE(uf.custom_title, f.title) as feed_title,
+                   uf.category_id, c.name as category_name,
+                   a.title, a.url, a.author, a.snippet, a.cover_image_url, a.published_at,
+                   MAX(COALESCE(uas.is_read, 0)) as is_read,
+                   MAX(COALESCE(uas.is_starred, 0)) as is_starred,
+                   MAX(uas.highlight_color) as highlight_color,
+                   a.content_html,
+                   a.ai_summary,
+                   GROUP_CONCAT(DISTINCT COALESCE(uf.custom_title, f.title)) as all_feed_titles
+            FROM articles_hot a
+            JOIN feeds f ON a.feed_id = f.id
+            JOIN user_feeds uf ON a.feed_id = uf.feed_id
+            LEFT JOIN categories c ON uf.category_id = c.id
+            LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
+            {where_clause}
+            GROUP BY rtrim(a.url, '/')
+            ORDER BY {sort_column} {sort_order}
+            LIMIT ? OFFSET ?
+        """
+
     c_cur = await conn.execute(count_sql, tuple(params))
     total = (await c_cur.fetchone())["total"]
 
-    # 2. 分頁讀取資料 (Paginated fetch)
-    query_sql = f"""
-        SELECT a.id, a.feed_id, COALESCE(uf.custom_title, f.title) as feed_title,
-               uf.category_id, c.name as category_name,
-               a.title, a.url, a.author, a.snippet, a.cover_image_url, a.published_at,
-               COALESCE(uas.is_read, 0) as is_read,
-               COALESCE(uas.is_starred, 0) as is_starred
-        FROM articles_hot a
-        JOIN feeds f ON a.feed_id = f.id
-        JOIN user_feeds uf ON a.feed_id = uf.feed_id
-        LEFT JOIN categories c ON uf.category_id = c.id
-        LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
-        {where_clause}
-        ORDER BY {sort_column} {sort_order}
-        LIMIT ? OFFSET ?
-    """
     fetch_params = list(params) + [actual_limit, actual_offset]
     cur = await conn.execute(query_sql, tuple(fetch_params))
     rows = await cur.fetchall()
@@ -169,6 +220,19 @@ async def list_articles(
     items: list[ArticleListItemDTO] = []
     for r in rows:
         read_bool = bool(r["is_read"])
+        all_feeds_raw = r["all_feed_titles"] if "all_feed_titles" in r.keys() else None
+        dup_feeds: Optional[list[str]] = None
+        if all_feeds_raw:
+            feed_list = [f.strip() for f in str(all_feeds_raw).split(",") if f.strip()]
+            main_title = r["feed_title"]
+            extra = [f for f in feed_list if f != main_title]
+            if extra:
+                dup_feeds = extra
+
+        html_val = r["content_html"] if "content_html" in r.keys() else ""
+        ai_sum_val = r["ai_summary"] if "ai_summary" in r.keys() else None
+        applied_plugs = detect_applied_plugins(r["url"] or "", html_val or "", ai_sum_val)
+
         items.append(
             ArticleListItemDTO(
                 id=r["id"],
@@ -185,7 +249,10 @@ async def list_articles(
                 is_read=read_bool,
                 is_unread=not read_bool,
                 is_starred=bool(r["is_starred"]),
+                highlight_color=r["highlight_color"],
                 tags=article_tags_map.get(r["id"], []),
+                applied_plugins=applied_plugs,
+                duplicate_feeds=dup_feeds,
             )
         )
 
@@ -209,9 +276,10 @@ async def get_article_detail(
         SELECT a.id, a.feed_id, COALESCE(uf.custom_title, f.title) as feed_title,
                uf.category_id, c.name as category_name,
                a.title, a.url, a.author, a.snippet, a.content_html, a.content_text,
-               a.cover_image_url, a.published_at,
+               a.ai_summary, a.cover_image_url, a.published_at,
                COALESCE(uas.is_read, 0) as is_read,
-               COALESCE(uas.is_starred, 0) as is_starred
+               COALESCE(uas.is_starred, 0) as is_starred,
+               uas.highlight_color
         FROM articles_hot a
         JOIN feeds f ON a.feed_id = f.id
         JOIN user_feeds uf ON a.feed_id = uf.feed_id
@@ -219,7 +287,19 @@ async def get_article_detail(
         LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
         WHERE a.id = ? AND uf.user_id = ?
     """
-    cur = await conn.execute(query_sql, (article_id, user_id))
+    try:
+        cur = await conn.execute(query_sql, (article_id, user_id))
+    except Exception as query_err:
+        if "no such column" in str(query_err).lower() and "ai_summary" in str(query_err).lower():
+            try:
+                await conn.execute("ALTER TABLE articles_hot ADD COLUMN ai_summary TEXT;")
+                await conn.commit()
+            except Exception as exc:
+                logger.debug(f"Non-fatal exception adding ai_summary column to articles_hot: {exc}")
+            cur = await conn.execute(query_sql, (article_id, user_id))
+        else:
+            raise
+
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -240,6 +320,7 @@ async def get_article_detail(
         (article_id, user_id),
     )
     tags = [dict(tr) for tr in await t_cur.fetchall()]
+    applied_plugs = detect_applied_plugins(row["url"] or "", content_html, row["ai_summary"])
 
     return ArticleDetailDTO(
         id=row["id"],
@@ -256,10 +337,33 @@ async def get_article_detail(
         is_read=read_bool,
         is_unread=not read_bool,
         is_starred=bool(row["is_starred"]),
+        highlight_color=row["highlight_color"],
         content_html=content_html,
         content_text=content_text,
+        ai_summary=row["ai_summary"],
         tags=tags,
+        applied_plugins=applied_plugs,
     )
+
+
+async def _get_all_sibling_article_ids(conn: aiosqlite.Connection, user_id: int, article_id: int) -> list[int]:
+    """取得同一用戶所訂閱頻道中，與指定文章具有相同標準化網址的所有文章 ID (Get all sibling article IDs across feeds)."""
+    cur = await conn.execute("SELECT url FROM articles_hot WHERE id = ?", (article_id,))
+    row = await cur.fetchone()
+    if not row or not row["url"]:
+        return [article_id]
+
+    url = row["url"]
+    s_cur = await conn.execute(
+        """
+        SELECT a.id FROM articles_hot a
+        JOIN user_feeds uf ON a.feed_id = uf.feed_id
+        WHERE uf.user_id = ? AND rtrim(a.url, '/') = rtrim(?, '/')
+        """,
+        (user_id, url),
+    )
+    s_rows = await s_cur.fetchall()
+    return [r["id"] for r in s_rows] if s_rows else [article_id]
 
 
 @router.patch("/{article_id}/state")
@@ -279,40 +383,45 @@ async def update_article_state_patch(
 
     is_starred = 1 if patch.get("is_starred") else 0 if "is_starred" in patch else None
     is_trash = 1 if patch.get("is_trash") else 0 if "is_trash" in patch else None
+    highlight_color = patch.get("highlight_color") if "highlight_color" in patch else None
 
-    # 確保該關聯存在
-    cur = await conn.execute(
-        "SELECT is_read, is_starred, is_trash FROM user_article_states WHERE user_id = ? AND article_id = ?",
-        (user_id, article_id),
-    )
-    row = await cur.fetchone()
-    if not row:
-        await conn.execute(
-            """
-            INSERT INTO user_article_states (user_id, article_id, is_read, is_starred, is_trash, starred_at)
-            VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END)
-            """,
-            (user_id, article_id, is_read or 0, is_starred or 0, is_trash or 0, is_starred or 0),
+    target_ids = await _get_all_sibling_article_ids(conn, user_id, article_id)
+    for aid in target_ids:
+        cur = await conn.execute(
+            "SELECT is_read, is_starred, is_trash, highlight_color FROM user_article_states WHERE user_id = ? AND article_id = ?",
+            (user_id, aid),
         )
-    else:
-        updates = []
-        params = []
-        if is_read is not None:
-            updates.append("is_read = ?")
-            params.append(is_read)
-        if is_starred is not None:
-            updates.append("is_starred = ?")
-            updates.append("starred_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END")
-            params.extend([is_starred, is_starred])
-        if is_trash is not None:
-            updates.append("is_trash = ?")
-            params.append(is_trash)
-        if updates:
-            params.extend([user_id, article_id])
+        row = await cur.fetchone()
+        if not row:
             await conn.execute(
-                f"UPDATE user_article_states SET {', '.join(updates)} WHERE user_id = ? AND article_id = ?",
-                tuple(params),
+                """
+                INSERT INTO user_article_states (user_id, article_id, is_read, is_starred, is_trash, highlight_color, starred_at)
+                VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END)
+                """,
+                (user_id, aid, is_read or 0, is_starred or 0, is_trash or 0, highlight_color, is_starred or 0),
             )
+        else:
+            updates = []
+            params = []
+            if is_read is not None:
+                updates.append("is_read = ?")
+                params.append(is_read)
+            if is_starred is not None:
+                updates.append("is_starred = ?")
+                updates.append("starred_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END")
+                params.extend([is_starred, is_starred])
+            if is_trash is not None:
+                updates.append("is_trash = ?")
+                params.append(is_trash)
+            if "highlight_color" in patch:
+                updates.append("highlight_color = ?")
+                params.append(highlight_color)
+            if updates:
+                params.extend([user_id, aid])
+                await conn.execute(
+                    f"UPDATE user_article_states SET {', '.join(updates)} WHERE user_id = ? AND article_id = ?",
+                    tuple(params),
+                )
 
     await conn.commit()
     return {"article_id": article_id, "success": True}
@@ -327,14 +436,16 @@ async def toggle_article_read(
 ) -> dict:
     """切換單篇文章已讀／未讀狀態 (Toggle Read/Unread State)."""
     user_id = user["id"]
-    await conn.execute(
-        """
-        INSERT INTO user_article_states (user_id, article_id, is_read)
-        VALUES (?, ?, ?)
-        ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = excluded.is_read
-        """,
-        (user_id, article_id, 1 if is_read else 0),
-    )
+    target_ids = await _get_all_sibling_article_ids(conn, user_id, article_id)
+    for aid in target_ids:
+        await conn.execute(
+            """
+            INSERT INTO user_article_states (user_id, article_id, is_read)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, article_id) DO UPDATE SET is_read = excluded.is_read
+            """,
+            (user_id, aid, 1 if is_read else 0),
+        )
     await conn.commit()
     return {"article_id": article_id, "is_read": is_read}
 
@@ -348,16 +459,18 @@ async def toggle_article_star(
 ) -> dict:
     """切換單篇文章星標收藏 (Toggle Starred State)."""
     user_id = user["id"]
-    await conn.execute(
-        """
-        INSERT INTO user_article_states (user_id, article_id, is_starred, starred_at)
-        VALUES (?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
-        ON CONFLICT(user_id, article_id) DO UPDATE SET
-            is_starred = excluded.is_starred,
-            starred_at = excluded.starred_at
-        """,
-        (user_id, article_id, 1 if is_starred else 0, 1 if is_starred else 0),
-    )
+    target_ids = await _get_all_sibling_article_ids(conn, user_id, article_id)
+    for aid in target_ids:
+        await conn.execute(
+            """
+            INSERT INTO user_article_states (user_id, article_id, is_starred, starred_at)
+            VALUES (?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
+            ON CONFLICT(user_id, article_id) DO UPDATE SET
+                is_starred = excluded.is_starred,
+                starred_at = excluded.starred_at
+            """,
+            (user_id, aid, 1 if is_starred else 0, 1 if is_starred else 0),
+        )
     await conn.commit()
     return {"article_id": article_id, "is_starred": is_starred}
 
@@ -468,7 +581,14 @@ async def mark_all_read_flexible(
         return {"marked_count": len(article_ids), "status": "success"}
 
     feed_id = (req or {}).get("feed_id") or ((req or {}).get("target_id") if (req or {}).get("scope") == "feed" else None)
-    cat_id = (req or {}).get("category_id") or ((req or {}).get("target_id") if (req or {}).get("scope") == "category" else None)
+    cat_id = (req or {}).get("category_id")
+    scope = (req or {}).get("scope")
+    if cat_id is None and scope == "category":
+        cat_id = (req or {}).get("target_id", "uncategorized")
+
+    is_uncategorized = (scope == "uncategorized") or (
+        cat_id is not None and str(cat_id).strip().lower() in ("uncategorized", "null", "none", "0")
+    )
 
     if feed_id:
         target_articles_sql = """
@@ -477,13 +597,20 @@ async def mark_all_read_flexible(
             WHERE uf.user_id = ? AND a.feed_id = ?
         """
         params = (user_id, feed_id)
-    elif cat_id:
+    elif is_uncategorized:
+        target_articles_sql = """
+            SELECT a.id FROM articles_hot a
+            JOIN user_feeds uf ON a.feed_id = uf.feed_id
+            WHERE uf.user_id = ? AND uf.category_id IS NULL
+        """
+        params = (user_id,)
+    elif cat_id is not None and str(cat_id).isdigit():
         target_articles_sql = """
             SELECT a.id FROM articles_hot a
             JOIN user_feeds uf ON a.feed_id = uf.feed_id
             WHERE uf.user_id = ? AND uf.category_id = ?
         """
-        params = (user_id, cat_id)
+        params = (user_id, int(cat_id))
     else:
         target_articles_sql = """
             SELECT a.id FROM articles_hot a
@@ -507,9 +634,11 @@ async def mark_all_read_flexible(
 
     if feed_id:
         await conn.execute("UPDATE user_feeds SET unread_count = 0 WHERE user_id = ? AND feed_id = ?", (user_id, feed_id))
-    elif cat_id:
-        await conn.execute("UPDATE user_feeds SET unread_count = 0 WHERE user_id = ? AND category_id = ?", (user_id, cat_id))
-        await conn.execute("UPDATE categories SET unread_count = 0 WHERE user_id = ? AND id = ?", (user_id, cat_id))
+    elif is_uncategorized:
+        await conn.execute("UPDATE user_feeds SET unread_count = 0 WHERE user_id = ? AND category_id IS NULL", (user_id,))
+    elif cat_id is not None and str(cat_id).isdigit():
+        await conn.execute("UPDATE user_feeds SET unread_count = 0 WHERE user_id = ? AND category_id = ?", (user_id, int(cat_id)))
+        await conn.execute("UPDATE categories SET unread_count = 0 WHERE user_id = ? AND id = ?", (user_id, int(cat_id)))
     else:
         await conn.execute("UPDATE user_feeds SET unread_count = 0 WHERE user_id = ?", (user_id,))
         await conn.execute("UPDATE categories SET unread_count = 0 WHERE user_id = ?", (user_id,))
@@ -522,16 +651,16 @@ async def mark_all_read_flexible(
 async def fetch_article_full_content(
     article_id: int,
     user: dict = Depends(get_current_user),
-    conn: aiosqlite.Connection = Depends(get_write_db),
+    conn: aiosqlite.Connection = Depends(get_db),
 ) -> ArticleDetailDTO:
     """透過多階梯全文引擎抓取原始網頁全文並更新文章 (Fetch Full Web Page Content via Multi-Tier Engine)."""
+    from omnirss.core.database import get_db_manager
     from omnirss.core.security import HTMLSanitizer
 
     user_id = user["id"]
-    cur = await conn.execute(
-        """
+    query_sql = """
         SELECT a.id, a.feed_id, a.url, a.title, a.author, a.snippet, a.published_at,
-               a.cover_image_url, COALESCE(uf.custom_title, f.title) as feed_title,
+               a.ai_summary, a.cover_image_url, COALESCE(uf.custom_title, f.title) as feed_title,
                uf.category_id, c.name as category_name,
                COALESCE(uas.is_read, 0) as is_read,
                COALESCE(uas.is_starred, 0) as is_starred,
@@ -542,9 +671,22 @@ async def fetch_article_full_content(
         LEFT JOIN categories c ON uf.category_id = c.id
         LEFT JOIN user_article_states uas ON a.id = uas.article_id AND uas.user_id = uf.user_id
         WHERE a.id = ? AND uf.user_id = ?
-        """,
-        (article_id, user_id),
-    )
+    """
+    try:
+        cur = await conn.execute(query_sql, (article_id, user_id))
+    except Exception as query_err:
+        if "no such column" in str(query_err).lower() and "ai_summary" in str(query_err).lower():
+            try:
+                db_mgr = get_db_manager()
+                async with db_mgr.write_transaction() as wconn:
+                    await wconn.execute("ALTER TABLE articles_hot ADD COLUMN ai_summary TEXT;")
+                    await wconn.commit()
+            except Exception as exc:
+                logger.debug(f"Non-fatal exception adding ai_summary column to articles_hot in fetch: {exc}")
+            cur = await conn.execute(query_sql, (article_id, user_id))
+        else:
+            raise
+
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -560,30 +702,75 @@ async def fetch_article_full_content(
             requires_flaresolverr=bool(row["requires_flaresolverr"]),
         )
         
-        extracted_html = None
+        new_content_html = None
+        extracted_text = ""
+        new_snippet = ""
+
         if status_code < 400 and html_raw:
-            extracted_html = CrawlerEngine.extract_full_text_from_html(html_raw, base_url=article_url)
-        
-        if extracted_html:
-            new_content_html = extracted_html
-            extracted_text = HTMLSanitizer.extract_text(extracted_html)
-            new_snippet = HTMLSanitizer.extract_snippet(extracted_html, max_chars=200)
-        else:
+            from omnirss.core.plugin_manager import get_plugin_manager
+            from omnirss.sdk.models import ArticleDTO
+            pm = get_plugin_manager()
+            raw_dto = ArticleDTO(
+                id=article_id,
+                feed_id=row["feed_id"],
+                title=row["title"],
+                url=article_url,
+                author=row["author"],
+                content_html=html_raw,
+                content_text=HTMLSanitizer.extract_text(html_raw),
+                snippet=HTMLSanitizer.extract_snippet(html_raw, max_chars=200),
+            )
+            # 優先讓專屬處理外掛（如 PTT / Yahoo / Mobile01）解析原始完整 HTML
+            try:
+                processed_full = await pm.execute_all_processors(
+                    raw_dto, user_id=user["id"], trigger_source="manual"
+                )
+                if processed_full and processed_full.content_html and processed_full.content_html != html_raw:
+                    new_content_html = processed_full.content_html
+                    extracted_text = processed_full.content_text or HTMLSanitizer.extract_text(new_content_html)
+                    new_snippet = HTMLSanitizer.extract_snippet(new_content_html, max_chars=200)
+            except Exception as proc_err:
+                logger.debug(f"Plugin pipeline bypass on manual full text: {proc_err}")
+
+            # 若無專屬外掛處理，回退至 Trafilatura 通用全文萃取
+            if not new_content_html:
+                extracted_html = CrawlerEngine.extract_full_text_from_html(html_raw, base_url=article_url)
+                if extracted_html:
+                    new_content_html = extracted_html
+                    extracted_text = HTMLSanitizer.extract_text(extracted_html)
+                    new_snippet = HTMLSanitizer.extract_snippet(extracted_html, max_chars=200)
+
+        if not new_content_html:
             extracted_text = row["snippet"] or "無法自遠端網站提取全文內容"
             new_content_html = f"<p>{extracted_text}</p>"
             new_snippet = extracted_text[:200]
 
-        await conn.execute(
-            """
-            UPDATE articles_hot
-            SET content_html = ?, content_text = ?, snippet = ?
-            WHERE id = ?
-            """,
-            (new_content_html, extracted_text, new_snippet, article_id),
-        )
-        await conn.commit()
+        db_mgr = get_db_manager()
+        async with db_mgr.write_transaction() as wconn:
+            await wconn.execute(
+                """
+                UPDATE articles_hot
+                SET content_html = ?, content_text = ?, snippet = ?
+                WHERE id = ?
+                """,
+                (new_content_html, extracted_text, new_snippet, article_id),
+            )
+            await wconn.commit()
 
         read_bool = bool(row["is_read"])
+        applied_plugs = detect_applied_plugins(row["url"] or "", new_content_html, row["ai_summary"])
+        t_cur = await conn.execute(
+            """
+            SELECT t.id, t.name, t.color_hex
+            FROM article_tags at
+            JOIN tags t ON at.tag_id = t.id
+            WHERE at.article_id = ? AND t.user_id = ?
+            ORDER BY t.sort_order ASC, t.id ASC
+            """,
+            (article_id, user_id),
+        )
+        tags = [{"id": tr["id"], "name": tr["name"], "color_hex": tr["color_hex"]} for tr in await t_cur.fetchall()]
+
         return ArticleDetailDTO(
             id=row["id"],
             feed_id=row["feed_id"],
@@ -601,7 +788,10 @@ async def fetch_article_full_content(
             is_starred=bool(row["is_starred"]),
             content_html=new_content_html,
             content_text=extracted_text,
-            tags=[],
+            ai_summary=row["ai_summary"],
+            highlight_color=row["highlight_color"] if "highlight_color" in row.keys() else None,
+            tags=tags,
+            applied_plugins=applied_plugs,
         )
     except HTTPException:
         raise

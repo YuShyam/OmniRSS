@@ -1,11 +1,22 @@
 {
   "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
   "id": "omnirss/gemini-summary",
-  "name": "Gemini Flash AI 動態模型繁中重點摘要外掛",
-  "version": "1.0.0",
+  "name": {
+    "zh-TW": "Gemini Flash AI 繁中重點摘要外掛",
+    "en-US": "Gemini Flash AI Summary Processor"
+  },
+  "version": "1.1.0",
   "slot_type": "processor",
+  "badge": {
+    "short_name": "AI",
+    "icon": "✨",
+    "color": "#8b5cf6"
+  },
   "author": "OmniRSS Core Team",
-  "description": "基於 Google 官方 google-genai SDK 與動態模型探索機制，為長篇文章自動產出 3~5 點繁體中文結構化摘要，支援個人自備金鑰 (BYOK) 與冷庫永久快取。",
+  "description": {
+    "zh-TW": "基於 Google 官方 google-genai SDK 與動態模型探索機制，支援自訂提示詞風格 (Prompt Template) 與重點條列，為長篇文章產出高資訊密度摘要。",
+    "en-US": "Generates structured bullet-point summaries in Traditional Chinese or custom prompt templates using Google Gemini Flash models."
+  },
   "entry_point": "plugin:GeminiSummaryProcessorPlugin",
   "minimum_omnirss_version": "1.0.0",
   "dependencies": [
@@ -16,31 +27,156 @@
     "db_read:articles",
     "db_write:archives_cold"
   ],
+  "timeout_seconds": 45,
+  "match_patterns": [
+    "<all_urls>"
+  ],
+  "actions": [
+    {
+      "id": "standard",
+      "name": {
+        "zh-TW": "標準重點條列",
+        "en-US": "Standard Bullet Points"
+      },
+      "icon": "📝",
+      "description": {
+        "zh-TW": "客觀精準提煉核心事實、重要進展與數據細節",
+        "en-US": "Extract objective facts, developments and details"
+      }
+    },
+    {
+      "id": "entertainment",
+      "name": {
+        "zh-TW": "影視與娛樂看點",
+        "en-US": "Entertainment & Media Highlights"
+      },
+      "icon": "🎬",
+      "description": {
+        "zh-TW": "提取作品資訊、發行番號、演出名單、企劃主題與看點",
+        "en-US": "Extract title, release code, cast, plot themes and highlights"
+      }
+    },
+    {
+      "id": "tldr",
+      "name": {
+        "zh-TW": "極簡 TL;DR 結論",
+        "en-US": "Concise TL;DR Summary"
+      },
+      "icon": "⚡",
+      "description": {
+        "zh-TW": "1 句大綱結論 + 核心事實要點",
+        "en-US": "1-sentence summary plus core key takeaways"
+      }
+    },
+    {
+      "id": "insights",
+      "name": {
+        "zh-TW": "產業與數據洞察",
+        "en-US": "Industry & Data Insights"
+      },
+      "icon": "📊",
+      "description": {
+        "zh-TW": "專業分析師數據、核心決策與實質影響",
+        "en-US": "Professional data metrics, decisions and impacts"
+      }
+    },
+    {
+      "id": "roast",
+      "name": {
+        "zh-TW": "犀利幽默短評",
+        "en-US": "Sharp & Witty Roast"
+      },
+      "icon": "🌶️",
+      "description": {
+        "zh-TW": "幽默犀利、一針見血的吐槽與風格短評",
+        "en-US": "Humorous and sharp witty commentary"
+      }
+    }
+  ],
   "default_config": {
+    "auto_apply": false,
     "api_key": "",
     "model": "auto",
     "target_language": "zh-TW",
     "summary_bullets": 4,
-    "auto_summarize_on_star": true
+    "auto_summarize_on_star": true,
+    "default_preset_id": "standard",
+    "prompt_presets": [
+      {
+        "id": "standard",
+        "name": "標準重點條列",
+        "is_builtin": true,
+        "prompt": "請針對以下文章內容，以繁體中文 (Traditional Chinese, 台灣習慣用語) 產出 {bullets} 點客觀且高資訊密度的重點摘要。\n輸出格式請直接以 Markdown 條列清單 ( - ) 回覆，勿加入多餘前綴開場白：\n\n標題：{title}\n\n內文：\n{content}"
+      },
+      {
+        "id": "tldr",
+        "name": "極簡 TL;DR 結論",
+        "is_builtin": true,
+        "prompt": "請針對以下文章，以極度精準、簡明扼要的繁體中文提供 TL;DR 核心結論（1~2 句總結 + {bullets} 點核心事實）：\n輸出格式請直接以 Markdown 條列清單 ( - ) 回覆：\n\n標題：{title}\n\n內文：\n{content}"
+      },
+      {
+        "id": "insights",
+        "name": "產業與數據洞察",
+        "is_builtin": true,
+        "prompt": "請以產業分析師視角，針對以下文章提取關鍵數據、核心趨勢與實質影響（{bullets} 點 Markdown 條列清單，繁體中文）：\n\n標題：{title}\n\n內文：\n{content}"
+      },
+      {
+        "id": "entertainment",
+        "name": "影視與娛樂看點",
+        "is_builtin": true,
+        "prompt": "請以專業客觀的影視、文化娛樂作品與多媒體發行資訊評析視角，將以下內容整理為 {bullets} 點繁體中文 (Traditional Chinese) 重點摘要：\n- **作品資訊**：作品名稱、發行番號/代碼 (若有) 與發行商規格\n- **核心主題**：企劃主題設定與故事劇情背景脈絡\n- **參演人物**：主要演出名單 (女優/男優/主演團隊/人物背景)\n- **劇情觀點**：作品核心特色、題材亮點與劇情看點\n\n【格式規範】：每點開頭請嚴格採用「- **四字標籤**：具體說明」格式（固定使用 **作品資訊**、**核心主題**、**參演人物**、**劇情觀點**），粗體標籤嚴格維持四個字；語言一律使用繁體中文。輸出格式請直接以 Markdown 條列清單 ( - ) 回覆：\n\n標題：{title}\n\n內文：\n{content}"
+      },
+      {
+        "id": "roast",
+        "name": "犀利幽默短評",
+        "is_builtin": true,
+        "prompt": "請以毒舌、幽默但切中要害的犀利風格，針對以下內容進行繁體中文短評，給出 {bullets} 個讓人會心一笑或直擊痛點的點評：\n\n標題：{title}\n\n內文：\n{content}"
+      }
+    ]
   },
   "config_schema": {
     "type": "object",
     "properties": {
+      "auto_apply": {
+        "type": "boolean",
+        "default": false,
+        "title": {
+          "zh-TW": "爬取入庫時自動執行 AI 摘要 (耗用 Token，預設關閉)",
+          "en-US": "Auto Summarize on Feed Ingestion"
+        }
+      },
       "api_key": {
         "type": "string",
-        "title": "Google Gemini API Key (可於個人設定中獨立填寫自備金鑰)"
+        "title": {
+          "zh-TW": "Google Gemini API Key (可於個人設定中獨立填寫自備金鑰)",
+          "en-US": "Google Gemini API Key (Bring Your Own Key)"
+        }
       },
       "model": {
         "type": "string",
         "default": "auto",
-        "title": "模型型號 ('auto' 代表自動探測可用 Flash 模型並啟用配額瀑布降級)"
+        "title": {
+          "zh-TW": "模型型號 ('auto' 代表自動探測可用 Flash 模型並啟用配額降級)",
+          "en-US": "Model Name ('auto' to auto-discover active Flash models)"
+        }
       },
       "summary_bullets": {
         "type": "integer",
         "minimum": 2,
         "maximum": 8,
         "default": 4,
-        "title": "重點條列數量"
+        "title": {
+          "zh-TW": "重點條列數量 (2 ~ 8)",
+          "en-US": "Summary Bullets (2 ~ 8)"
+        }
+      },
+      "auto_summarize_on_star": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "星標收藏時自動觸發 AI 摘要",
+          "en-US": "Auto-summarize when starring an article"
+        }
       }
     }
   }

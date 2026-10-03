@@ -4,13 +4,71 @@ This module loads, validates, and provides structured access to OmniRSS server s
 from JSON configuration files and environment variables using Pydantic v2.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import secrets
 from typing import Optional
+import uuid
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_base_dir() -> Path:
+    """動態判斷並回傳專案根目錄位置 (Dynamically locate project root directory).
+
+    相容於本機開發環境 (3 階層父目錄) 與 Docker 容器環境 (/app/omnirss)。
+    :return: 專案根目錄 Path 實例
+    """
+    if os.getenv("OMNIRSS_BASE_DIR"):
+        return Path(os.getenv("OMNIRSS_BASE_DIR")).resolve()
+
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "config.example.json").is_file() or (parent / "data").is_dir() or (parent / "src").is_dir():
+            return parent
+    return current.parents[2] if len(current.parents) > 2 else current.parent
+
+
+def generate_hardware_secret() -> str:
+    """根據宿主機與硬體標識生成穩定的 JWT 密鑰 (Generate deterministic hardware-bound key).
+
+    即便專案重新構建或資料庫/檔案遺失，只要在同一台伺服器上，產出的 JWT 密鑰皆一致，
+    確保使用者 Cookies 跨伺服器重啟/重灌不失效。
+    :return: SHA256 密鑰字串
+    """
+    hw_tokens: list[str] = []
+
+    # 1. 探測 Linux unique machine-id
+    for m_path in ["/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/class/dmi/id/product_uuid"]:
+        p = Path(m_path)
+        if p.is_file():
+            try:
+                content = p.read_text("utf-8").strip()
+                if content:
+                    hw_tokens.append(content)
+            except Exception:
+                pass
+
+    # 2. 探測 MAC 地址
+    try:
+        mac_num = uuid.getnode()
+        if mac_num:
+            hw_tokens.append(str(mac_num))
+    except Exception:
+        pass
+
+    # 3. 探測 Hostname
+    try:
+        hw_tokens.append(platform.node())
+    except Exception:
+        pass
+
+    raw_hw_str = "|".join(hw_tokens) if hw_tokens else "omnirss_default_hw_salt"
+    salt = "OmniRSS_Deterministic_JWT_Secret_v1"
+    return hashlib.sha256(f"{salt}:{raw_hw_str}".encode("utf-8")).hexdigest()
 
 
 class ServerConfig(BaseModel):
@@ -99,7 +157,7 @@ def load_settings(config_path: Optional[str | Path] = None) -> AppSettings:
     """
     global _GLOBAL_SETTINGS
 
-    base_dir = Path(__file__).resolve().parents[3]
+    base_dir = get_base_dir()
 
     if config_path is None:
         cand_paths = [
@@ -124,7 +182,7 @@ def load_settings(config_path: Optional[str | Path] = None) -> AppSettings:
 
     settings = AppSettings.model_validate(raw_data)
 
-    # 若 secret_key 為空，自動由 data/.jwt_secret 載入或生成安全密鑰 (Persist secret key across server restarts)
+    # 若 secret_key 為空，自動由 data/.jwt_secret 載入或由硬體金鑰 (Hardware Key) 衍生生成密鑰
     if not settings.server.secret_key:
         secret_file = base_dir / "data" / ".jwt_secret"
         if secret_file.is_file():
@@ -134,12 +192,13 @@ def load_settings(config_path: Optional[str | Path] = None) -> AppSettings:
                     settings.server.secret_key = loaded_key
             except Exception:
                 pass
+
         if not settings.server.secret_key:
-            new_key = secrets.token_urlsafe(32)
-            settings.server.secret_key = new_key
+            hw_secret = generate_hardware_secret()
+            settings.server.secret_key = hw_secret
             try:
                 secret_file.parent.mkdir(parents=True, exist_ok=True)
-                secret_file.write_text(new_key, "utf-8")
+                secret_file.write_text(hw_secret, "utf-8")
             except Exception:
                 pass
 

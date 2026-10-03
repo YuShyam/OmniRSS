@@ -10,22 +10,18 @@ import { t } from "../i18n.js";
 
 export class TreeView {
   constructor(containerEl) {
-    this.container = containerEl;
-    try {
-      const saved = JSON.parse(localStorage.getItem("omnirss_collapsed_categories") || "[]");
-      this.collapsedCategories = new Set(saved);
-    } catch (_) {
-      this.collapsedCategories = new Set();
-    }
+    this.container = containerEl || document.getElementById("tree-scroll-container");
+    const saved = store.get("collapsedCategories") || [];
+    this.collapsedCategories = new Set(Array.isArray(saved) ? saved.map(String) : []);
     this.initListeners();
     this.initSplitter();
     this.initContextMenu();
   }
 
   saveCollapsedState() {
-    try {
-      localStorage.setItem("omnirss_collapsed_categories", JSON.stringify(Array.from(this.collapsedCategories)));
-    } catch (_) {}
+    const list = Array.from(this.collapsedCategories);
+    store.set("collapsedCategories", list);
+    window.dispatchEvent(new CustomEvent("omnirss:save-settings-debounced"));
   }
 
   initListeners() {
@@ -38,11 +34,20 @@ export class TreeView {
     store.subscribe("trashCount", () => this.render());
     store.subscribe("tagsPosition", () => this.render());
     store.subscribe("tagsPaneHeight", () => this.render());
+    store.subscribe("collapsedCategories", (val) => {
+      this.collapsedCategories = new Set(Array.isArray(val) ? val.map(String) : []);
+      this.render();
+    });
     store.subscribe("activeFilter", () => this.updateActiveHighlight());
     store.subscribe("activeCategoryId", () => this.updateActiveHighlight());
     store.subscribe("activeFeedId", () => this.updateActiveHighlight());
     store.subscribe("activeTagId", () => this.updateActiveHighlight());
     store.subscribe("activeTag", () => this.updateActiveHighlight());
+
+    if (!this.container) {
+      this.container = document.getElementById("tree-scroll-container");
+    }
+    if (!this.container) return;
 
     this.container.addEventListener("click", (e) => {
       // Manage Tags Click
@@ -142,11 +147,6 @@ export class TreeView {
             })
           );
         }
-        if (filterVal === "starred" || filterVal === "trash") {
-          store.set("hideRead", false);
-          const btnHideRead = document.getElementById("btn-toggle-hide-read");
-          if (btnHideRead) btnHideRead.classList.remove("active");
-        }
         store.update({
           activeFilter: filterVal,
           activeCategoryId: null,
@@ -197,10 +197,6 @@ export class TreeView {
             })
           );
         }
-        store.set("hideRead", false);
-        const btnHideRead = document.getElementById("btn-toggle-hide-read");
-        if (btnHideRead) btnHideRead.classList.remove("active");
-
         store.update({
           activeFilter: "tag",
           activeCategoryId: null,
@@ -262,13 +258,10 @@ export class TreeView {
         activeSplitter.classList.remove("dragging");
         activeSplitter = null;
       }
-      document.body.classList.remove("drag-resizing-active");
-
       const finalHeight = store.state.tagsPaneHeight;
       if (finalHeight) {
-        try {
-          localStorage.setItem("omnirss_tags_pane_height", String(finalHeight));
-        } catch (_) {}
+        store.set("tagsPaneHeight", finalHeight);
+        window.dispatchEvent(new CustomEvent("omnirss:layout-changed"));
       }
     };
 
@@ -295,244 +288,251 @@ export class TreeView {
   }
 
   render() {
-    const categories = store.get("categories") || [];
-    const feeds = store.get("feeds") || [];
-    const hideEmpty = store.get("hideEmptyFeeds");
-    const hideEmptyCategories = store.get("hideEmptyCategories");
-    const starredCount = store.get("starredCount") || 0;
-    const totalArticlesCount = store.get("totalArticlesCount") || 0;
-    const trashCount = store.get("trashCount") || 0;
-    const tagsPosition = store.get("tagsPosition") || "bottom";
-    const tagsPaneHeight = store.get("tagsPaneHeight") || 140;
+    if (!this.container) {
+      this.container = document.getElementById("tree-scroll-container");
+    }
+    if (!this.container) return;
 
-    // Calculate unread statistics
-    let totalUnread = 0;
-    const catUnreadMap = {};
+    try {
+      const categories = store.get("categories") || [];
+      const feeds = store.get("feeds") || [];
+      const hideEmpty = store.get("hideEmptyFeeds");
+      const starredCount = store.get("starredCount") || 0;
+      const totalArticlesCount = store.get("totalArticlesCount") || 0;
+      const trashCount = store.get("trashCount") || 0;
+      const tagsPosition = store.get("tagsPosition") || "bottom";
+      const tagsPaneHeight = store.get("tagsPaneHeight") || 140;
 
-    feeds.forEach((f) => {
-      const unread = f.unread_count || 0;
-      totalUnread += unread;
-      const catId = f.category_id ? String(f.category_id) : "uncategorized";
-      catUnreadMap[catId] = (catUnreadMap[catId] || 0) + unread;
-    });
+      // Calculate unread statistics
+      let totalUnread = 0;
+      const catUnreadMap = {};
 
-    // Group feeds by category
-    const feedsByCat = {};
-    feeds.forEach((f) => {
-      const catId = f.category_id ? String(f.category_id) : "uncategorized";
-      if (!feedsByCat[catId]) feedsByCat[catId] = [];
-      feedsByCat[catId].push(f);
-    });
+      feeds.forEach((f) => {
+        const unread = f.unread_count || 0;
+        totalUnread += unread;
+        const catId = f.category_id ? String(f.category_id) : "uncategorized";
+        catUnreadMap[catId] = (catUnreadMap[catId] || 0) + unread;
+      });
 
-    // Smart Folders Block
-    const smartFoldersHtml = `
-      <!-- Smart Virtual Folders -->
-      <div class="smart-folders-group">
-        <div class="tree-item" data-type="filter" data-filter="all">
-          <span class="tree-icon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
-          </span>
-          <span class="tree-label">${t("nav.all_feeds")}</span>
-          ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : (totalArticlesCount > 0 ? `<span class="tree-count">(${totalArticlesCount})</span>` : "")}
-        </div>
+      // Group feeds by category
+      const feedsByCat = {};
+      feeds.forEach((f) => {
+        const catId = f.category_id ? String(f.category_id) : "uncategorized";
+        if (!feedsByCat[catId]) feedsByCat[catId] = [];
+        feedsByCat[catId].push(f);
+      });
 
-        <div class="tree-item" data-type="filter" data-filter="unread">
-          <span class="tree-icon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </span>
-          <span class="tree-label">${t("nav.unread")}</span>
-          ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : ""}
-        </div>
-
-        <div class="tree-item" data-type="filter" data-filter="starred">
-          <span class="tree-icon" style="color: var(--accent-orange)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </span>
-          <span class="tree-label">${t("nav.starred")}</span>
-          ${starredCount > 0 ? `<span class="tree-count" id="tree-starred-count">(${starredCount})</span>` : ""}
-        </div>
-
-        <div class="tree-item" data-type="filter" data-filter="trash">
-          <span class="tree-icon">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </span>
-          <span class="tree-label">${t("nav.trash")}</span>
-          ${trashCount > 0 ? `<span class="tree-count" id="tree-trash-count">(${trashCount})</span>` : ""}
-          ${trashCount > 0 ? `<button type="button" class="btn-empty-trash tree-row-action-btn" title="${t("reader.empty_trash")}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:2px 4px; border-radius:3px; margin-left:auto; font-size:12px; display:inline-flex; align-items:center;">🧹</button>` : ""}
-        </div>
-      </div>
-    `;
-
-    // Categories & Subscriptions Block
-    let categoriesHtml = `<div class="categories-group" id="tree-categories-group" style="flex: 1 1 0%; min-height: 60px; overflow-y: auto;">`;
-
-    // Render each category
-    categories.forEach((cat) => {
-      const catId = String(cat.id);
-      const isCollapsed = this.collapsedCategories.has(catId);
-      let catFeeds = feedsByCat[cat.id] || [];
-      const catUnread = catUnreadMap[catId] || 0;
-
-      // Filter empty feeds if hideEmpty
-      if (hideEmpty) {
-        catFeeds = catFeeds.filter((f) => (f.unread_count || 0) > 0);
-        if (catFeeds.length === 0 && catUnread === 0) return;
-      }
-
-      // Category Error Aggregation (Dead >= 10, Warning >= 3)
-      const allOriginalCatFeeds = feedsByCat[cat.id] || [];
-      const deadCount = allOriginalCatFeeds.filter((f) => (f.error_count || 0) >= 10).length;
-      const warnCount = allOriginalCatFeeds.filter((f) => (f.error_count || 0) >= 3 && (f.error_count || 0) < 10).length;
-      let catErrorBadge = "";
-      if (deadCount > 0) {
-        catErrorBadge += `<span class="category-error-badge dead" title="${t("tree.dead_feeds_warn", { count: deadCount })}">💀 ${deadCount}</span>`;
-      }
-      if (warnCount > 0) {
-        catErrorBadge += `<span class="category-error-badge warning" title="${t("tree.unstable_feeds_warn", { count: warnCount })}">⚠️ ${warnCount}</span>`;
-      }
-
-      categoriesHtml += `
-        <div class="category-block">
-          <div class="category-item" data-type="category" data-id="${cat.id}">
-            <span class="category-toggle ${isCollapsed ? "collapsed" : ""}" data-cat-id="${cat.id}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </span>
+      // Smart Folders Block
+      const smartFoldersHtml = `
+        <!-- Smart Virtual Folders -->
+        <div class="smart-folders-group">
+          <div class="tree-item" data-type="filter" data-filter="all">
             <span class="tree-icon">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
             </span>
-            <span class="tree-label">${this.escape(cat.name)}</span>
-            ${catErrorBadge}
-            ${catUnread > 0 ? `<span class="tree-count has-unread">(${catUnread})</span>` : ""}
-            <div class="tree-row-actions">
-              <button class="tree-row-btn btn-settings" data-action="category-settings" data-target-type="category" data-target-id="${cat.id}" data-target-name="${this.escape(cat.name)}" title="${t("tree.category_props")}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </button>
-              <button class="tree-row-btn btn-refresh" data-action="refresh" data-target-type="category" data-target-id="${cat.id}" data-target-name="${this.escape(cat.name)}" title="${t("tree.refresh_cat")}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              </button>
-              ${catUnread > 0 ? `
-                <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="${cat.id}" title="${t("tree.mark_node_read")}">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                </button>
-              ` : ""}
-            </div>
+            <span class="tree-label">${t("nav.all_feeds")}</span>
+            ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : (totalArticlesCount > 0 ? `<span class="tree-count">(${totalArticlesCount})</span>` : "")}
           </div>
 
-          ${
-            !isCollapsed
-              ? `
-            <div class="category-feeds-container">
-              ${catFeeds.map((feed) => this.renderFeedItem(feed)).join("")}
-            </div>
-          `
-              : ""
-          }
+          <div class="tree-item" data-type="filter" data-filter="unread">
+            <span class="tree-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </span>
+            <span class="tree-label">${t("nav.unread")}</span>
+            ${totalUnread > 0 ? `<span class="tree-count has-unread">(${totalUnread})</span>` : ""}
+          </div>
+
+          <div class="tree-item" data-type="filter" data-filter="starred">
+            <span class="tree-icon" style="color: var(--accent-orange)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </span>
+            <span class="tree-label">${t("nav.starred")}</span>
+            ${starredCount > 0 ? `<span class="tree-count" id="tree-starred-count">(${starredCount})</span>` : ""}
+          </div>
+
+          <div class="tree-item" data-type="filter" data-filter="trash">
+            <span class="tree-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </span>
+            <span class="tree-label">${t("nav.trash")}</span>
+            ${trashCount > 0 ? `<span class="tree-count" id="tree-trash-count">(${trashCount})</span>` : ""}
+            ${trashCount > 0 ? `<button type="button" class="btn-empty-trash tree-row-action-btn" title="${t("reader.empty_trash")}" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:2px 4px; border-radius:3px; margin-left:auto; font-size:12px; display:inline-flex; align-items:center;">🧹</button>` : ""}
+          </div>
         </div>
       `;
-    });
 
-    // Uncategorized Feeds
-    let uncatFeeds = feedsByCat["uncategorized"] || [];
-    const uncatUnread = catUnreadMap["uncategorized"] || 0;
+      // Categories & Subscriptions Block
+      let categoriesHtml = `<div class="categories-group" id="tree-categories-group" style="flex: 1 1 0%; min-height: 60px; overflow-y: auto;">`;
 
-    if (hideEmpty) {
-      uncatFeeds = uncatFeeds.filter((f) => (f.unread_count || 0) > 0);
-    }
+      // Render each category
+      categories.forEach((cat) => {
+        const catId = String(cat.id);
+        const isCollapsed = this.collapsedCategories.has(catId);
+        let catFeeds = feedsByCat[catId] || feedsByCat[cat.id] || [];
+        const catUnread = catUnreadMap[catId] || 0;
 
-    if (uncatFeeds.length > 0 || feedsByCat["uncategorized"] && feedsByCat["uncategorized"].length > 0) {
-      const isCollapsed = this.collapsedCategories.has("uncategorized");
-      const deadCount = (feedsByCat["uncategorized"] || []).filter((f) => (f.error_count || 0) >= 10).length;
-      const warnCount = (feedsByCat["uncategorized"] || []).filter((f) => (f.error_count || 0) >= 3 && (f.error_count || 0) < 10).length;
-      let catErrorBadge = "";
-      if (deadCount > 0) catErrorBadge += `<span class="category-error-badge dead" title="${t("tree.uncat_dead_warn", { count: deadCount })}">💀 ${deadCount}</span>`;
-      if (warnCount > 0) catErrorBadge += `<span class="category-error-badge warning" title="${t("tree.uncat_unstable_warn", { count: warnCount })}">⚠️ ${warnCount}</span>`;
+        // Filter empty feeds if hideEmpty
+        if (hideEmpty) {
+          catFeeds = catFeeds.filter((f) => (f.unread_count || 0) > 0);
+          if (catFeeds.length === 0 && catUnread === 0) return;
+        }
 
-      categoriesHtml += `
-        <div class="category-block">
-          <div class="category-item" data-type="category" data-id="uncategorized">
-            <span class="category-toggle ${isCollapsed ? "collapsed" : ""}" data-cat-id="uncategorized">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </span>
-            <span class="tree-label">${t("tree.uncategorized")}</span>
-            ${catErrorBadge}
-            ${uncatUnread > 0 ? `<span class="tree-count has-unread">(${uncatUnread})</span>` : ""}
-            <div class="tree-row-actions">
-              <button class="tree-row-btn btn-refresh" data-action="refresh" data-target-type="category" data-target-id="uncategorized" data-target-name="${t("tree.uncategorized")}" title="${t("tree.refresh_uncat")}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              </button>
-              ${uncatUnread > 0 ? `
-                <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="uncategorized" title="${t("tree.mark_node_read")}">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        // Category Error Aggregation (Dead >= 10, Warning >= 3)
+        const allOriginalCatFeeds = feedsByCat[catId] || feedsByCat[cat.id] || [];
+        const deadCount = allOriginalCatFeeds.filter((f) => (f.error_count || 0) >= 10).length;
+        const warnCount = allOriginalCatFeeds.filter((f) => (f.error_count || 0) >= 3 && (f.error_count || 0) < 10).length;
+        let catErrorBadge = "";
+        if (deadCount > 0) {
+          catErrorBadge += `<span class="category-error-badge dead" title="${t("tree.dead_feeds_warn", { count: deadCount })}">💀 ${deadCount}</span>`;
+        }
+        if (warnCount > 0) {
+          catErrorBadge += `<span class="category-error-badge warning" title="${t("tree.unstable_feeds_warn", { count: warnCount })}">⚠️ ${warnCount}</span>`;
+        }
+
+        categoriesHtml += `
+          <div class="category-block">
+            <div class="category-item" data-type="category" data-id="${cat.id}">
+              <span class="category-toggle ${isCollapsed ? "collapsed" : ""}" data-cat-id="${cat.id}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <span class="tree-icon">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              </span>
+              <span class="tree-label">${this.escape(cat.name)}</span>
+              ${catErrorBadge}
+              ${catUnread > 0 ? `<span class="tree-count has-unread">(${catUnread})</span>` : ""}
+              <div class="tree-row-actions">
+                <button class="tree-row-btn btn-settings" data-action="category-settings" data-target-type="category" data-target-id="${cat.id}" data-target-name="${this.escape(cat.name)}" title="${t("tree.category_props")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                 </button>
-              ` : ""}
+                <button class="tree-row-btn btn-refresh" data-action="refresh" data-target-type="category" data-target-id="${cat.id}" data-target-name="${this.escape(cat.name)}" title="${t("tree.refresh_cat")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                ${catUnread > 0 ? `
+                  <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="${cat.id}" title="${t("tree.mark_node_read")}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                ` : ""}
+              </div>
             </div>
-          </div>
-          ${
-            !isCollapsed
-              ? `
-            <div class="category-feeds-container">
-              ${uncatFeeds.map((feed) => this.renderFeedItem(feed)).join("")}
-            </div>
-          `
-              : ""
-          }
-        </div>
-      `;
-    }
 
-    categoriesHtml += `</div>`;
-
-
-    // Render Labels / Tags Group (QuiteRSS 標籤組與垂直高度調整)
-    const tags = store.get("tags") || [];
-    let tagsHtml = "";
-    let splitterHtml = "";
-
-    if (tags.length > 0) {
-      splitterHtml = `<div class="tree-pane-splitter" id="tree-tags-splitter" title="${t("tree.resize_handle_tooltip")}"></div>`;
-      tagsHtml = `
-        <div class="tags-group-block" style="height: ${tagsPaneHeight}px; min-height: 50px; max-height: 400px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; background: var(--bg-surface);">
-          <div class="tags-group-header" style="padding: 4px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; border-bottom: 1px solid var(--border-color-subtle);">
-            <span style="display: flex; align-items: center; gap: 4px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-              <span>${t("tree.tags")}</span>
-            </span>
-            <button class="tree-header-action-btn" id="btn-manage-tags" title="${t("tags.manage_title")}" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-          </div>
-          <div class="tags-group-list" style="flex: 1; overflow-y: auto; padding: 2px 0;">
-            ${tags
-              .map(
-                (tag) => `
-              <div class="tree-item tag-item" data-type="tag" data-id="${tag.id}" data-name="${this.escape(tag.name)}">
-                <span class="tree-icon" style="color: ${tag.color_hex || "#3b82f6"};">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="${tag.color_hex || "#3b82f6"}"><circle cx="12" cy="12" r="10"/></svg>
-                </span>
-                <span class="tree-label">${this.escape(tag.name)}</span>
-                ${
-                  (tag.unread_count || 0) > 0
-                    ? `<span class="tree-count has-unread">(${tag.unread_count})</span>`
-                    : (tag.article_count > 0 ? `<span class="tree-count">(${tag.article_count})</span>` : "")
-                }
+            ${
+              !isCollapsed
+                ? `
+              <div class="category-feeds-container">
+                ${catFeeds.map((feed) => this.renderFeedItem(feed)).join("")}
               </div>
             `
-              )
-              .join("")}
+                : ""
+            }
           </div>
-        </div>
-      `;
-    }
+        `;
+      });
 
-    let finalHtml = smartFoldersHtml;
-    if (tagsPosition === "top") {
-      finalHtml += tagsHtml + (tags.length > 0 ? splitterHtml : "") + categoriesHtml;
-    } else {
-      finalHtml += categoriesHtml + (tags.length > 0 ? splitterHtml : "") + tagsHtml;
-    }
+      // Uncategorized Feeds
+      let uncatFeeds = feedsByCat["uncategorized"] || [];
+      const uncatUnread = catUnreadMap["uncategorized"] || 0;
 
-    this.container.innerHTML = finalHtml;
-    this.updateActiveHighlight();
+      if (hideEmpty) {
+        uncatFeeds = uncatFeeds.filter((f) => (f.unread_count || 0) > 0);
+      }
+
+      if (uncatFeeds.length > 0 || feedsByCat["uncategorized"] && feedsByCat["uncategorized"].length > 0) {
+        const isCollapsed = this.collapsedCategories.has("uncategorized");
+        const deadCount = (feedsByCat["uncategorized"] || []).filter((f) => (f.error_count || 0) >= 10).length;
+        const warnCount = (feedsByCat["uncategorized"] || []).filter((f) => (f.error_count || 0) >= 3 && (f.error_count || 0) < 10).length;
+        let catErrorBadge = "";
+        if (deadCount > 0) catErrorBadge += `<span class="category-error-badge dead" title="${t("tree.uncat_dead_warn", { count: deadCount })}">💀 ${deadCount}</span>`;
+        if (warnCount > 0) catErrorBadge += `<span class="category-error-badge warning" title="${t("tree.uncat_unstable_warn", { count: warnCount })}">⚠️ ${warnCount}</span>`;
+
+        categoriesHtml += `
+          <div class="category-block">
+            <div class="category-item" data-type="category" data-id="uncategorized">
+              <span class="category-toggle ${isCollapsed ? "collapsed" : ""}" data-cat-id="uncategorized">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <span class="tree-label">${t("tree.uncategorized")}</span>
+              ${catErrorBadge}
+              ${uncatUnread > 0 ? `<span class="tree-count has-unread">(${uncatUnread})</span>` : ""}
+              <div class="tree-row-actions">
+                <button class="tree-row-btn btn-refresh" data-action="refresh" data-target-type="category" data-target-id="uncategorized" data-target-name="${t("tree.uncategorized")}" title="${t("tree.refresh_uncat")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                ${uncatUnread > 0 ? `
+                  <button class="tree-row-btn" data-action="mark-read" data-target-type="category" data-target-id="uncategorized" title="${t("tree.mark_node_read")}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                ` : ""}
+              </div>
+            </div>
+            ${
+              !isCollapsed
+                ? `
+              <div class="category-feeds-container">
+                ${uncatFeeds.map((feed) => this.renderFeedItem(feed)).join("")}
+              </div>
+            `
+                : ""
+            }
+          </div>
+        `;
+      }
+
+      categoriesHtml += `</div>`;
+
+      // Render Labels / Tags Group
+      const tags = store.get("tags") || [];
+      let tagsHtml = "";
+      let splitterHtml = "";
+
+      if (tags.length > 0) {
+        splitterHtml = `<div class="tree-pane-splitter" id="tree-tags-splitter" title="${t("tree.resize_handle_tooltip")}"></div>`;
+        tagsHtml = `
+          <div class="tags-group-block" style="height: ${tagsPaneHeight}px; min-height: 50px; max-height: 400px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; background: var(--bg-surface);">
+            <div class="tags-group-header" style="padding: 4px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; border-bottom: 1px solid var(--border-color-subtle);">
+              <span style="display: flex; align-items: center; gap: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                <span>${t("tree.tags")}</span>
+              </span>
+              <button class="tree-header-action-btn" id="btn-manage-tags" title="${t("tags.manage_title")}" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </div>
+            <div class="tags-group-list" style="flex: 1; overflow-y: auto; padding: 2px 0;">
+              ${tags
+                .map(
+                  (tag) => `
+                <div class="tree-item tag-item" data-type="tag" data-id="${tag.id}" data-name="${this.escape(tag.name)}">
+                  <span class="tree-icon" style="color: ${tag.color_hex || "#3b82f6"};">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="${tag.color_hex || "#3b82f6"}"><circle cx="12" cy="12" r="10"/></svg>
+                  </span>
+                  <span class="tree-label">${this.escape(tag.name)}</span>
+                  ${
+                    (tag.unread_count || 0) > 0
+                      ? `<span class="tree-count has-unread">(${tag.unread_count})</span>`
+                      : (tag.article_count > 0 ? `<span class="tree-count">(${tag.article_count})</span>` : "")
+                  }
+                </div>
+              `
+                )
+                .join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      let finalHtml = smartFoldersHtml;
+      if (tagsPosition === "top") {
+        finalHtml += tagsHtml + (tags.length > 0 ? splitterHtml : "") + categoriesHtml;
+      } else {
+        finalHtml += categoriesHtml + (tags.length > 0 ? splitterHtml : "") + tagsHtml;
+      }
+
+      this.container.innerHTML = finalHtml;
+      this.updateActiveHighlight();
+    } catch (err) {
+      console.error("TreeView render error:", err);
+    }
   }
 
   renderFeedItem(feed) {

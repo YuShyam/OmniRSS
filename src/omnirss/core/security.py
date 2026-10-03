@@ -200,14 +200,17 @@ class HTMLSanitizer:
         "video",
         "audio",
         "source",
+        "details",
+        "summary",
     }
 
     ALLOWED_ATTRIBUTES = {
         "a": {"href", "title", "target"},
-        "img": {"src", "alt", "title", "width", "height", "loading"},
+        "img": {"src", "alt", "title", "width", "height", "loading", "referrerpolicy"},
         "video": {"src", "controls", "poster", "width", "height"},
         "audio": {"src", "controls"},
         "source": {"src", "type"},
+        "details": {"open"},
         "*": {"class", "id", "style"},
     }
 

@@ -1,11 +1,22 @@
 {
   "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
   "id": "omnirss/simhash-dedup",
-  "name": "SimHash 智慧語意跨站轉貼去重與聚合外掛",
+  "name": {
+    "zh-TW": "SimHash 智慧語意跨站轉貼去重與聚合外掛",
+    "en-US": "SimHash Semantic Cross-Site Deduplication Plugin"
+  },
   "version": "1.0.0",
   "slot_type": "processor",
+  "badge": {
+    "short_name": "去重",
+    "icon": "🔄",
+    "color": "#f59e0b"
+  },
   "author": "OmniRSS Core Team",
-  "description": "基於 64-bit SimHash 局部敏感雜湊與繁體分詞，精準辨識跨站轉貼、內容農場與改寫洗版文章，支援折疊聚合與自動打標。",
+  "description": {
+    "zh-TW": "基於 64-bit SimHash 局部敏感雜湊與繁體分詞，精準辨識跨站轉貼、內容農場與改寫洗版文章，支援折疊聚合與自動打標。",
+    "en-US": "Identifies syndicated, reposted, and content-farm articles using 64-bit SimHash locality-sensitive hashing."
+  },
   "entry_point": "plugin:SimHashProcessorPlugin",
   "minimum_omnirss_version": "1.0.0",
   "dependencies": [
@@ -15,6 +26,9 @@
     "network_access:none",
     "db_read:articles",
     "db_write:article_tags"
+  ],
+  "match_patterns": [
+    "<all_urls>"
   ],
   "default_config": {
     "hamming_distance_threshold": 3,
@@ -30,13 +44,19 @@
         "minimum": 1,
         "maximum": 10,
         "default": 3,
-        "title": "漢明距離門檻 (值越小越嚴格，預設 3 代表相似度 > 90%)"
+        "title": {
+          "zh-TW": "漢明距離門檻 (值越小越嚴格，預設 3 代表相似度 > 90%)",
+          "en-US": "Hamming Distance Threshold (smaller is stricter, default 3 is >90% similarity)"
+        }
       },
       "action_mode": {
         "type": "string",
         "enum": ["cluster", "tag_only", "mark_read"],
         "default": "cluster",
-        "title": "偵測到轉貼時的處置模式 (cluster: 折疊聚合; tag_only: 僅打標籤; mark_read: 自動標為已讀)"
+        "title": {
+          "zh-TW": "偵測到轉貼時的處置模式 (折疊聚合 / 僅打標籤 / 自動標為已讀)",
+          "en-US": "Action Mode on Repost Detected"
+        }
       }
     }
   }

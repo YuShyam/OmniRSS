@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- 背景漸層 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#090d16" />
+    </linearGradient>
+    
+    <!-- RSS 活力橘金漸層 -->
+    <linearGradient id="rssGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff4500" />
+      <stop offset="50%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+
+    <!-- 柔和外發光濾鏡 -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 圓角 Squircle 背景 -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bgGrad)" stroke="#38bdf8" stroke-width="6" stroke-opacity="0.25" />
+  
+  <!-- 微細外邊框光暈 -->
+  <rect x="24" y="24" width="464" height="464" rx="100" fill="none" stroke="url(#rssGrad)" stroke-width="2" stroke-opacity="0.3" />
+
+  <!-- RSS 符號群組 -->
+  <g transform="translate(48, 48) scale(0.8125)">
+    <!-- 核心光點 -->
+    <circle cx="112" cy="400" r="48" fill="url(#rssGrad)" filter="url(#glow)" />
+    
+    <!-- 第一道波紋 -->
+    <path d="M112 216 C213.62 216 296 298.38 296 400" fill="none" stroke="url(#rssGrad)" stroke-width="56" stroke-linecap="round" filter="url(#glow)" />
+    
+    <!-- 第二道波紋 -->
+    <path d="M112 88 C284.31 88 424 227.69 424 400" fill="none" stroke="url(#rssGrad)" stroke-width="56" stroke-linecap="round" filter="url(#glow)" />
+
+    <!-- Omni 全能匯聚科技光環點綴 -->
+    <circle cx="360" cy="152" r="16" fill="#38bdf8" opacity="0.9" />
+    <circle cx="360" cy="152" r="32" fill="none" stroke="#38bdf8" stroke-width="4" opacity="0.4" />
+  </g>
+</svg>

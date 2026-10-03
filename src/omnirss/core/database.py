@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS categories (
     custom_interval_minutes INTEGER DEFAULT NULL,
     custom_min_date DATETIME DEFAULT NULL,
     force_min_date BOOLEAN NOT NULL DEFAULT 0,
+    auto_full_text BOOLEAN NOT NULL DEFAULT 0,
+    view_preferences TEXT DEFAULT '{}',
     unread_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name)
@@ -92,6 +94,7 @@ CREATE TABLE IF NOT EXISTS articles_hot (
     snippet TEXT,
     content_html TEXT,
     content_text TEXT,
+    ai_summary TEXT,
     cover_image_url TEXT,
     published_at DATETIME NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -106,6 +109,7 @@ CREATE TABLE IF NOT EXISTS user_article_states (
     is_read BOOLEAN NOT NULL DEFAULT 0,
     is_starred BOOLEAN NOT NULL DEFAULT 0,
     is_trash BOOLEAN NOT NULL DEFAULT 0,
+    highlight_color TEXT DEFAULT NULL,
     starred_at DATETIME,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(user_id, article_id)
@@ -198,17 +202,39 @@ CREATE TABLE IF NOT EXISTS user_plugin_configs (
 );
 CREATE INDEX IF NOT EXISTS idx_user_plugin ON user_plugin_configs(user_id, plugin_id);
 
--- 13. 個人智慧過濾與規則表 (User Rules)
+-- 13. 外掛獨立執行日誌表 (Plugin Execution Logs & Activity Stream)
+CREATE TABLE IF NOT EXISTS plugin_execution_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL,
+    user_id INTEGER,
+    article_id INTEGER,
+    article_title TEXT,
+    trigger_source TEXT NOT NULL DEFAULT 'manual',
+    action_param TEXT,
+    status TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    output_preview TEXT,
+    error_message TEXT,
+    error_traceback TEXT,
+    executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_logs_plugin ON plugin_execution_logs(plugin_id, executed_at DESC);
+
+-- 14. 個人智慧過濾與規則表 (User Rules 2.0 with Scope & Condition Groups)
 CREATE TABLE IF NOT EXISTS user_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     is_enabled BOOLEAN NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    scope_type TEXT NOT NULL DEFAULT 'all',
     scope_category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
     scope_feed_id INTEGER REFERENCES feeds(id) ON DELETE CASCADE,
-    conditions_json TEXT NOT NULL,
-    actions_json TEXT NOT NULL,
+    scope_feed_ids_json TEXT DEFAULT '[]',
+    match_mode TEXT NOT NULL DEFAULT 'all',
+    condition_groups_json TEXT NOT NULL DEFAULT '[]',
+    conditions_json TEXT NOT NULL DEFAULT '[]',
+    actions_json TEXT NOT NULL DEFAULT '[]',
     hit_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -302,15 +328,46 @@ import asyncio
 DB_WRITE_LOCK = asyncio.Lock()
 
 
+def normalize_article_url(url: str) -> str:
+    """清理文章網址之追蹤參數並標準化 (Normalize article URL by stripping tracking query params).
+
+    :param url: 原始文章網址 (Raw URL string)
+    :return: 去除 utm_*, fbclid, ref 等追蹤參數後之標準化網址
+    """
+    if not url or not url.strip():
+        return ""
+    url = url.strip()
+    try:
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return url
+        # 忽略常見行銷與追蹤參數 (Strip tracking and campaign query parameters)
+        tracking_prefixes = ("utm_", "fbclid", "gclid", "msclkid", "ref", "source", "feature", "spm", "from_")
+        query_params = parse_qs(parsed.query, keep_blank_values=False)
+        cleaned_params = {
+            k: v for k, v in query_params.items()
+            if not any(k.lower().startswith(p) for p in tracking_prefixes)
+        }
+        clean_query = urlencode(cleaned_params, doseq=True)
+        path = parsed.path.rstrip("/") if parsed.path.endswith("/") and len(parsed.path) > 1 else parsed.path
+        return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, clean_query, ""))
+    except Exception:
+        return url
+
+
 def compute_entry_hash(feed_id: int, guid: str, url: str) -> str:
-    """計算文章物理唯一去重雜湊 (Compute SHA-256 entry hash).
+    """計算文章物理唯一去重雜湊 (Compute SHA-256 entry hash with URL normalization).
 
     :param feed_id: 訂閱來源 ID (Feed ID)
     :param guid: 文章 GUID (Article GUID)
     :param url: 文章原文 URL (Article URL)
     :return: 64 位元 16 進位 SHA-256 雜湊 (Entry hash string)
     """
-    raw_key = f"{feed_id}:{guid.strip()}:{url.strip()}".encode("utf-8")
+    norm_url = normalize_article_url(url)
+    guid_str = str(guid or "").strip()
+    norm_guid = normalize_article_url(guid_str) if (guid_str.startswith("http://") or guid_str.startswith("https://")) else guid_str
+    raw_key = f"{feed_id}:{norm_guid}:{norm_url}".encode("utf-8")
     return hashlib.sha256(raw_key).hexdigest()
 
 
@@ -325,6 +382,7 @@ def apply_pragmas(conn: Union[sqlite3.Connection, aiosqlite.Connection]) -> None
         "PRAGMA busy_timeout = 60000;",
         "PRAGMA cache_size = -64000;",
         "PRAGMA temp_store = MEMORY;",
+        "PRAGMA mmap_size = 268435456;",
         "PRAGMA foreign_keys = ON;",
         "PRAGMA auto_vacuum = INCREMENTAL;",
     ]
@@ -335,6 +393,7 @@ def apply_pragmas(conn: Union[sqlite3.Connection, aiosqlite.Connection]) -> None
 
 
 def init_db_sync(db_path: Union[str, Path]) -> None:
+
     """同步初始化資料庫結構與觸發器 (Synchronously initialize database schema and triggers).
 
     :param db_path: 資料庫檔案路徑 (Database file path)
@@ -348,7 +407,7 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
         apply_pragmas(conn)
         conn.executescript(DDL_SCHEMA)
         # 自動向後相容補齊歷史資料庫欄位 (Auto-migrate existing database columns)
-        for col_def in ["content_html TEXT", "content_text TEXT"]:
+        for col_def in ["content_html TEXT", "content_text TEXT", "ai_summary TEXT"]:
             try:
                 conn.execute(f"ALTER TABLE articles_hot ADD COLUMN {col_def};")
             except sqlite3.OperationalError:
@@ -390,7 +449,56 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE categories ADD COLUMN auto_full_text BOOLEAN NOT NULL DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE categories ADD COLUMN view_preferences TEXT DEFAULT '{}';")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_article_states ADD COLUMN highlight_color TEXT DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_rules ADD COLUMN scope_type TEXT NOT NULL DEFAULT 'all';")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_rules ADD COLUMN scope_feed_ids_json TEXT DEFAULT '[]';")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_rules ADD COLUMN match_mode TEXT NOT NULL DEFAULT 'all';")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE user_rules ADD COLUMN condition_groups_json TEXT NOT NULL DEFAULT '[]';")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_user_states_trash ON user_article_states(user_id, is_trash);")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS plugin_execution_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plugin_id TEXT NOT NULL,
+                    user_id INTEGER,
+                    article_id INTEGER,
+                    article_title TEXT,
+                    trigger_source TEXT NOT NULL DEFAULT 'manual',
+                    action_param TEXT,
+                    status TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    output_preview TEXT,
+                    error_message TEXT,
+                    error_traceback TEXT,
+                    executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_plugin_logs_plugin ON plugin_execution_logs(plugin_id, executed_at DESC);")
         except sqlite3.OperationalError:
             pass
         try:
@@ -427,6 +535,61 @@ def init_db_sync(db_path: Union[str, Path]) -> None:
             """)
         except Exception as e:
             logger.debug(f"PTT legacy URL migration notice: {e}")
+
+        # 自動清洗歷史同頻道重複文章 (Self-heal same-feed duplicate articles)
+        try:
+            cur = conn.cursor()
+            # 1. 批次標準化所有存量 URL (去除結尾斜線與追蹤參數)
+            cur.execute("SELECT id, url FROM articles_hot WHERE url != ''")
+            for row in cur.fetchall():
+                aid, raw_url = row[0], row[1]
+                n_url = normalize_article_url(raw_url)
+                if n_url != raw_url:
+                    cur.execute("UPDATE articles_hot SET url = ? WHERE id = ?", (n_url, aid))
+
+            # 2. 合併同頻道重複文章
+            cur.execute("""
+                SELECT feed_id, rtrim(url, '/') as norm_url
+                FROM articles_hot
+                WHERE url != ''
+                GROUP BY feed_id, rtrim(url, '/')
+                HAVING COUNT(*) > 1
+            """)
+            dup_groups = cur.fetchall()
+            for g in dup_groups:
+                fid = g[0]
+                nurl = g[1]
+                cur.execute("""
+                    SELECT id, length(coalesce(content_html, '')) as content_len
+                    FROM articles_hot
+                    WHERE feed_id = ? AND rtrim(url, '/') = ?
+                    ORDER BY content_len DESC, id ASC
+                """, (fid, nurl))
+                group_rows = cur.fetchall()
+                if len(group_rows) > 1:
+                    keeper_id = group_rows[0][0]
+                    for r in group_rows[1:]:
+                        did = r[0]
+                        cur.execute("""
+                            INSERT INTO user_article_states (user_id, article_id, is_read, is_starred, is_trash, highlight_color, starred_at)
+                            SELECT user_id, ?, is_read, is_starred, is_trash, highlight_color, starred_at
+                            FROM user_article_states WHERE article_id = ?
+                            ON CONFLICT(user_id, article_id) DO UPDATE SET
+                                is_read = MAX(user_article_states.is_read, excluded.is_read),
+                                is_starred = MAX(user_article_states.is_starred, excluded.is_starred),
+                                is_trash = MAX(user_article_states.is_trash, excluded.is_trash),
+                                highlight_color = COALESCE(user_article_states.highlight_color, excluded.highlight_color),
+                                starred_at = COALESCE(user_article_states.starred_at, excluded.starred_at);
+                        """, (keeper_id, did))
+                        cur.execute("""
+                            INSERT OR IGNORE INTO article_tags (article_id, tag_id)
+                            SELECT ?, tag_id FROM article_tags WHERE article_id = ?;
+                        """, (keeper_id, did))
+                        cur.execute("DELETE FROM user_article_states WHERE article_id = ?", (did,))
+                        cur.execute("DELETE FROM article_tags WHERE article_id = ?", (did,))
+                        cur.execute("DELETE FROM articles_hot WHERE id = ?", (did,))
+        except Exception as e:
+            logger.debug(f"Same-feed duplicate self-heal notice: {e}")
 
         # 自動自癒歷史未讀計數與重置索引健全度 (Self-heal all unread counts & reindex on startup)
         try:
@@ -499,6 +662,9 @@ class DatabaseManager:
             await conn.execute("PRAGMA journal_mode = WAL;")
             await conn.execute("PRAGMA synchronous = NORMAL;")
             await conn.execute("PRAGMA busy_timeout = 60000;")
+            await conn.execute("PRAGMA cache_size = -64000;")
+            await conn.execute("PRAGMA temp_store = MEMORY;")
+            await conn.execute("PRAGMA mmap_size = 268435456;")
             await conn.execute("PRAGMA foreign_keys = ON;")
             yield conn
         finally:

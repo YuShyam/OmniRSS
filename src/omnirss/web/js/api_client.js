@@ -7,6 +7,39 @@
 
 import { store } from "./state.js";
 
+function translateApiError(rawMsg) {
+  if (!rawMsg) return "發生未知錯誤";
+  const str = String(rawMsg);
+  if (str.includes("database disk image is malformed")) {
+    return "資料庫檔案結構異常，系統正在自動修復中";
+  }
+  if (str.includes("no such column")) {
+    return "資料庫缺少必要欄位，正在自動遷移更新";
+  }
+  if (str.includes("UNIQUE constraint failed")) {
+    return "此項目已存在，無法重複建立";
+  }
+  if (str.includes("FOREIGN KEY constraint failed")) {
+    return "無法執行：相關資料仍在使用中";
+  }
+  if (str.includes("database is locked")) {
+    return "資料庫忙碌中，請稍候再試";
+  }
+  if (str.includes("Article not found")) {
+    return "找不到指定的文章";
+  }
+  if (str.includes("Feed not found")) {
+    return "找不到指定的頻道來源";
+  }
+  if (str.includes("Category not found")) {
+    return "找不到指定的分類";
+  }
+  if (str.includes("Failed to fetch") || str.includes("NetworkError")) {
+    return "連線失敗，無法連接 OmniRSS 伺服器";
+  }
+  return str;
+}
+
 class ApiClient {
   constructor() {
     this.baseUrl = window.location.origin;
@@ -73,9 +106,11 @@ class ApiClient {
             errDetail = String(rawDetail);
           }
         } catch (_) {}
-        const error = new Error(errDetail);
+        const translated = translateApiError(errDetail);
+        const error = new Error(translated);
         error.status = response.status;
-        error.detail = errDetail;
+        error.detail = translated;
+        error.rawDetail = errDetail;
         throw error;
       }
 
@@ -87,7 +122,11 @@ class ApiClient {
 
       return await response.text();
     } catch (err) {
-      console.warn(`API Error [${endpoint}]:`, err.message);
+      const translatedMsg = translateApiError(err.message);
+      console.warn(`API Error [${endpoint}]:`, translatedMsg);
+      if (err.message !== translatedMsg) {
+        err.message = translatedMsg;
+      }
       throw err;
     }
   }
@@ -200,6 +239,12 @@ class ApiClient {
     return this.request("/api/feeds/refresh/progress");
   }
 
+  async stopRefresh() {
+    return this.request("/api/feeds/refresh/stop", {
+      method: "POST",
+    });
+  }
+
   async getFeed(id) {
     return this.request(`/api/feeds/${id}`);
   }
@@ -285,11 +330,12 @@ class ApiClient {
     });
   }
 
-  async markAllRead(feedId = null, categoryId = null, articleIds = null) {
+  async markAllRead(feedId = null, categoryId = null, articleIds = null, scope = null) {
     const body = {};
     if (articleIds && Array.isArray(articleIds)) body.article_ids = articleIds;
     if (feedId) body.feed_id = feedId;
-    if (categoryId) body.category_id = categoryId;
+    if (categoryId !== null && categoryId !== undefined) body.category_id = categoryId;
+    if (scope) body.scope = scope;
     return this.request("/api/articles/mark-all-read", {
       method: "POST",
       body: JSON.stringify(body),
@@ -304,6 +350,13 @@ class ApiClient {
   async createRule(ruleData) {
     return this.request("/api/rules", {
       method: "POST",
+      body: JSON.stringify(ruleData),
+    });
+  }
+
+  async updateRule(id, ruleData) {
+    return this.request(`/api/rules/${id}`, {
+      method: "PUT",
       body: JSON.stringify(ruleData),
     });
   }
@@ -331,13 +384,24 @@ class ApiClient {
     });
   }
 
+  async exportRules() {
+    return this.request("/api/rules/export");
+  }
+
+  async importRules(payload) {
+    return this.request("/api/rules/import", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Plugins Endpoints
   async getPlugins() {
     return this.request("/api/plugins");
   }
 
   async togglePlugin(id, isEnabled) {
-    return this.request(`/api/plugins/${id}/toggle`, {
+    return this.request(`/api/plugins/toggle?plugin_id=${encodeURIComponent(id)}`, {
       method: "POST",
       body: JSON.stringify({ is_enabled: isEnabled }),
     });
@@ -348,6 +412,41 @@ class ApiClient {
       method: "POST",
     });
   }
+
+  async getPluginConfig(id) {
+    return this.request(`/api/plugins/${id}/config`);
+  }
+
+  async updatePluginConfig(id, config) {
+    return this.request(`/api/plugins/${id}/config`, {
+      method: "PUT",
+      body: JSON.stringify({ config }),
+    });
+  }
+
+  async executeArticlePlugin(pluginId, articleId, actionParam = null) {
+    const qs = actionParam ? `?action_param=${encodeURIComponent(actionParam)}` : "";
+    return this.request(`/api/plugins/${pluginId}/execute-article/${articleId}${qs}`, {
+      method: "POST",
+    });
+  }
+
+  async getPluginLogs(pluginId, limit = 50) {
+    return this.request(`/api/plugins/logs?plugin_id=${encodeURIComponent(pluginId)}&limit=${limit}`);
+  }
+
+  async clearPluginLogs(pluginId) {
+    return this.request(`/api/plugins/logs/clear?plugin_id=${encodeURIComponent(pluginId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async batchApplyPlugin(pluginId) {
+    return this.request(`/api/plugins/batch-apply?plugin_id=${encodeURIComponent(pluginId)}`, {
+      method: "POST",
+    });
+  }
+
 
   // Backup & OPML
   async exportOpml() {
@@ -425,7 +524,54 @@ class ApiClient {
       body: JSON.stringify({ article_ids: articleIds, tag_id: tagId, action }),
     });
   }
+
+  // User Management & Security Endpoints
+  async changePassword(oldPassword, newPassword) {
+    return this.request("/api/user/password", {
+      method: "PUT",
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    });
+  }
+
+  async getUsers() {
+    return this.request("/api/users");
+  }
+
+  async createUser(userData) {
+    return this.request("/api/users", {
+      method: "POST",
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updateUser(userId, userData) {
+    return this.request(`/api/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async deleteUser(userId) {
+    return this.request(`/api/users/${userId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async getSystemLogs(category = "all") {
+    return this.request(`/api/system/logs?category=${encodeURIComponent(category)}`);
+  }
+
+  async get(endpoint) {
+    return this.request(endpoint, { method: "GET" });
+  }
+
+  // System Database Purge
+  async purgeDatabase() {
+    return this.request("/api/settings/purge-database", {
+      method: "POST",
+    });
+  }
 }
 
-
 export const api = new ApiClient();
+

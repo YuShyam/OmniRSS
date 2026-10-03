@@ -1,0 +1,91 @@
+{
+  "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
+  "id": "omnirss/ptt-enhancer",
+  "name": {
+    "zh-TW": "PTT BBS 閱讀體驗增強器",
+    "en-US": "PTT BBS Reading Enhancer"
+  },
+  "version": "1.0.0",
+  "slot_type": "processor",
+  "badge": {
+    "short_name": "PTT",
+    "icon": "🧩",
+    "color": "#3b82f6"
+  },
+  "author": "OmniRSS Core Team",
+  "description": {
+    "zh-TW": "專為批踢踢實業坊 (PTT) 設計之文章結構化增強外掛：自動分離 BBS 標頭卡片、保留排版換行、Imgur 圖片自動轉為高清預覽、並將推/噓/箭頭轉換為獨立結構化推文卡片。",
+    "en-US": "Structured reading enhancer for PTT BBS: separates metadata headers, preserves spacing, embeds Imgur previews, and parses push comments."
+  },
+  "entry_point": "plugin:PttEnhancerProcessorPlugin",
+  "minimum_omnirss_version": "1.0.0",
+  "dependencies": [
+    "lxml>=5.0.0"
+  ],
+  "permissions": [
+    "network_access:outbound",
+    "db_read:articles",
+    "db_write:archives_cold"
+  ],
+  "timeout_seconds": 15,
+  "match_patterns": [
+    "*://*.ptt.cc/*",
+    "*://ptt.cc/*",
+    "*://*.pttweb.cc/*",
+    "*://pttweb.cc/*"
+  ],
+  "default_config": {
+    "auto_apply": true,
+    "auto_embed_images": true,
+    "collapse_pushes": false,
+    "hide_arrow_pushes": false,
+    "max_pushes_display": 0
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "auto_apply": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "爬取入庫時自動套用 (Auto Apply on Feed Ingestion)",
+          "en-US": "Auto Apply on Feed Ingestion"
+        }
+      },
+      "auto_embed_images": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "自動展開圖片預覽 (Imgur / JPG / PNG / WebP)",
+          "en-US": "Auto Embed Image Previews"
+        }
+      },
+      "collapse_pushes": {
+        "type": "boolean",
+        "default": false,
+        "title": {
+          "zh-TW": "推文預設收合 (點擊可展開，專注文意)",
+          "en-US": "Collapse Push Comments by Default"
+        }
+      },
+      "hide_arrow_pushes": {
+        "type": "boolean",
+        "default": false,
+        "title": {
+          "zh-TW": "過濾純箭頭 (→) 推文，僅保留推與噓",
+          "en-US": "Hide Arrow (→) Comments"
+        }
+      },
+      "max_pushes_display": {
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 500,
+        "title": {
+          "zh-TW": "最多顯示推文數量 (0 代表無限制)",
+          "en-US": "Max Push Comments (0 for unlimited)"
+        }
+      }
+    }
+  }
+}

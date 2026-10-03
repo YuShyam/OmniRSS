@@ -18,6 +18,7 @@ import { ModalController } from "./components/modals.js";
 class App {
   constructor() {
     this.readTimer = null;
+    this._selectArticleSeq = 0;
   }
 
   escape(str) {
@@ -33,31 +34,66 @@ class App {
   async init() {
     console.log("OmniRSS UI Engine Initializing...");
 
-    // 1. Apply Initial Theme, Font Size & Language
-    this.applyTheme(store.get("theme") || "dark");
-    this.applyTypography();
-    updateDomTranslations();
+    try {
+      // 1. Apply Initial Theme, Font Size & Language
+      this.applyTheme(store.get("theme") || "dark");
+      this.applyTypography();
+      updateDomTranslations();
+    } catch (err) {
+      console.error("Theme/Typography init error:", err);
+    }
 
-    // 2. Initialize Components
+    // 2. Initialize Components with isolated error boundaries
     const treeEl = document.getElementById("tree-scroll-container");
     const listHeaderEl = document.getElementById("list-header-container");
     const listRowsEl = document.getElementById("list-rows-container");
     const readerEl = document.getElementById("reader-container");
     const colPickerEl = document.getElementById("column-picker-dropdown");
 
-    this.treeView = new TreeView(treeEl);
-    this.listView = new ListView(listHeaderEl, listRowsEl);
-    this.readerView = new ReaderView(readerEl);
-    this.columnPicker = new ColumnPicker(colPickerEl);
-    this.modals = new ModalController();
+    try {
+      this.treeView = new TreeView(treeEl);
+    } catch (err) {
+      console.error("TreeView init error:", err);
+    }
+
+    try {
+      this.listView = new ListView(listHeaderEl, listRowsEl);
+    } catch (err) {
+      console.error("ListView init error:", err);
+    }
+
+    try {
+      this.readerView = new ReaderView(readerEl);
+    } catch (err) {
+      console.error("ReaderView init error:", err);
+    }
+
+    try {
+      this.columnPicker = new ColumnPicker(colPickerEl);
+    } catch (err) {
+      console.error("ColumnPicker init error:", err);
+    }
+
+    try {
+      this.modals = new ModalController();
+    } catch (err) {
+      console.error("ModalController init error:", err);
+    }
 
     // 3. Initialize Keybindings, Splitters, Buttons, and Infinite Scroll
-    initKeybindings();
-    this.initSplitters();
-    this.initHeaderButtons();
-    this.initTreeToolbars();
-    this.initToastNotifications();
-    this.initGlobalEvents();
+    try { initKeybindings(); } catch (err) { console.error("Keybindings init error:", err); }
+    try { this.initSplitters(); } catch (err) { console.error("Splitters init error:", err); }
+    try { this.initHeaderButtons(); } catch (err) { console.error("HeaderButtons init error:", err); }
+    try { this.initTreeToolbars(); } catch (err) { console.error("TreeToolbars init error:", err); }
+    try { this.initToastNotifications(); } catch (err) { console.error("ToastNotifications init error:", err); }
+    try { this.initGlobalEvents(); } catch (err) { console.error("GlobalEvents init error:", err); }
+
+    // 響應式即時驅動多膠囊指示條 (Reactive Capsule Filter Bar Sync)
+    store.subscribe("activeFilter", () => this.updateFilterBar());
+    store.subscribe("activeFeedId", () => this.updateFilterBar());
+    store.subscribe("activeCategoryId", () => this.updateFilterBar());
+    store.subscribe("activeTagId", () => this.updateFilterBar());
+    store.subscribe("searchQuery", () => this.updateFilterBar());
 
     if (listRowsEl) {
       listRowsEl.addEventListener("scroll", async () => {
@@ -73,7 +109,11 @@ class App {
     }
 
     // 4. Initial Authentication & Data Load
-    await this.checkAuthAndLoad();
+    try {
+      await this.checkAuthAndLoad();
+    } catch (err) {
+      console.error("checkAuthAndLoad error:", err);
+    }
 
     // 5. Periodic Background Polling
     setInterval(() => this.reloadFeedsAndCounts(), 60000);
@@ -109,6 +149,9 @@ class App {
   }
 
   initSplitters() {
+    if (this._splittersInitialized) return;
+    this._splittersInitialized = true;
+
     // Vertical Splitter (Tree <-> Main)
     const splitterV = document.getElementById("splitter-tree");
     const paneTree = document.querySelector(".pane-tree");
@@ -133,6 +176,7 @@ class App {
           isDragging = false;
           splitterV.classList.remove("dragging");
           document.body.style.cursor = "";
+          window.dispatchEvent(new CustomEvent("omnirss:layout-changed"));
         }
       });
     }
@@ -165,6 +209,7 @@ class App {
           isDragging = false;
           splitterH.classList.remove("dragging");
           document.body.style.cursor = "";
+          window.dispatchEvent(new CustomEvent("omnirss:layout-changed"));
         }
       });
     }
@@ -179,6 +224,7 @@ class App {
         const next = current === "dark" ? "light" : current === "light" ? "midnight" : "dark";
         store.set("theme", next);
         this.applyTheme(next);
+        this.saveUserSettingsDebounced();
       });
     }
 
@@ -211,13 +257,13 @@ class App {
     const searchInput = document.getElementById("global-search");
     if (searchInput) {
       let timeout = null;
-      if (searchInput.value === "null" || !searchInput.value) {
-        searchInput.value = store.get("searchQuery") || "";
-      }
+      const initialQuery = store.get("searchQuery");
+      searchInput.value = (initialQuery && typeof initialQuery === "string" && initialQuery !== "null" && initialQuery !== "undefined") ? initialQuery : "";
+
       const triggerSearch = (immediate = false) => {
         clearTimeout(timeout);
         let val = searchInput.value;
-        if (val === "null") {
+        if (val === "null" || val === "undefined") {
           val = "";
           searchInput.value = "";
         }
@@ -240,31 +286,37 @@ class App {
           triggerSearch(true);
         } else if (e.key === "Escape") {
           e.preventDefault();
-          searchInput.value = "";
-          triggerSearch(true);
+          e.stopPropagation();
+          this.clearSearchOnly();
           searchInput.blur();
         }
       });
       searchInput.addEventListener("focus", () => {
-        if (searchInput.value === "null") searchInput.value = "";
+        if (searchInput.value === "null" || searchInput.value === "undefined") searchInput.value = "";
       });
       searchInput.addEventListener("blur", () => {
-        if (searchInput.value === "null") searchInput.value = "";
+        if (searchInput.value === "null" || searchInput.value === "undefined") searchInput.value = "";
       });
     }
 
     // Toggle Hide Read Button
     const btnHideRead = document.getElementById("btn-toggle-hide-read");
     if (btnHideRead) {
-      const isHide = store.get("hideRead") || false;
+      const isHide = Boolean(store.get("hideRead"));
       btnHideRead.classList.toggle("active", isHide);
       btnHideRead.addEventListener("click", () => {
         const next = !store.get("hideRead");
         store.set("hideRead", next);
-        btnHideRead.classList.toggle("active", next);
+        this.saveUserSettingsDebounced();
         this.loadArticles();
       });
     }
+
+    // 響應式同步「隱藏已讀」按鈕外觀狀態
+    store.subscribe("hideRead", (val) => {
+      const btn = document.getElementById("btn-toggle-hide-read");
+      if (btn) btn.classList.toggle("active", Boolean(val));
+    });
 
     // Refresh All Button (Force Immediate Backend Fetch with Real-time Progress Bar)
     const btnRefresh = document.getElementById("btn-refresh-all");
@@ -293,14 +345,17 @@ class App {
           if (progressMsg) progressMsg.textContent = t("status.checking_updates");
         }
 
-        // 啟動即時進度輪詢定時器 (120ms 高頻靈敏刷新)
-        let pollTimer = setInterval(async () => {
+        // 啟動即時進度輪詢定時器 (200ms 靈敏刷新，後端 is_running 結束時自動結案)
+        if (this.currentRefreshPollTimer) clearInterval(this.currentRefreshPollTimer);
+        this.currentRefreshPollTimer = setInterval(async () => {
           try {
             const prog = await api.getRefreshProgress();
-            if (prog && prog.is_running) {
+            if (!prog) return;
+
+            if (prog.is_running) {
               const total = Math.max(1, prog.total_feeds || 1);
               const done = prog.completed_feeds || 0;
-              const pct = Math.min(100, Math.max(0, Math.round((done / total) * 100)));
+              const pct = Math.min(99, Math.max(0, Math.round((done / total) * 100)));
               let currentName = prog.current_feed_name || t("status.connecting");
               if (currentName.length > 25) {
                 currentName = currentName.slice(0, 22) + "...";
@@ -309,51 +364,114 @@ class App {
               if (progressFill) progressFill.style.width = `${pct}%`;
               if (progressPercent) progressPercent.textContent = `${pct}%`;
               if (progressMsg) progressMsg.textContent = `[${done}/${total}] ${currentName} (+${prog.new_articles_count || 0})`;
+            } else {
+              // 後端已完成抓取 (is_running == false)，自動結案並同步資料
+              if (this.currentRefreshPollTimer) {
+                clearInterval(this.currentRefreshPollTimer);
+                this.currentRefreshPollTimer = null;
+              }
+              if (progressPill && !progressPill.classList.contains("finished")) {
+                progressPill.classList.add("finished");
+                if (progressFill) progressFill.style.width = "100%";
+                if (progressPercent) progressPercent.textContent = "100%";
+                const totalCount = prog.total_feeds || prog.completed_feeds || (store.get("feeds") || []).length;
+                const newCount = prog.new_articles_count || 0;
+                const completeMsg = newCount > 0
+                  ? t("status.refresh_complete_new", { feeds: totalCount, new: newCount })
+                  : t("status.refresh_complete_latest", { feeds: totalCount });
+                if (progressMsg) progressMsg.textContent = `✓ ${completeMsg}`;
+
+                await this.reloadFeedsAndCounts();
+                await this.loadArticles();
+
+                setTimeout(() => {
+                  if (progressPill.classList.contains("finished")) {
+                    progressPill.style.display = "none";
+                    progressPill.classList.remove("finished");
+                  }
+                }, 3000);
+              }
+              btnRefresh.classList.remove("busy");
+              if (svgIcon) svgIcon.classList.remove("animate-spin");
+              this.updateStatusBar();
             }
           } catch (_) {}
-        }, 120);
+        }, 200);
 
         try {
-          const res = await api.refreshAllFeeds();
-          clearInterval(pollTimer);
-
-          // 獲取最終進度統計
-          let finalNewCount = 0;
-          try {
-            const finalProg = await api.getRefreshProgress();
-            if (finalProg) finalNewCount = finalProg.new_articles_count || 0;
-          } catch (_) {}
-
-          await this.reloadFeedsAndCounts();
-          await this.loadArticles();
-
-          const refreshedCount = (res && typeof res.updated_feeds === "number") ? res.updated_feeds : (store.get("feeds") || []).length;
-          const msg = finalNewCount > 0
-            ? t("status.refresh_complete_new", { feeds: refreshedCount, new: finalNewCount })
-            : t("status.refresh_complete_latest", { feeds: refreshedCount });
-
+          await api.refreshAllFeeds();
+        } catch (err) {
+          if (this.currentRefreshPollTimer) {
+            clearInterval(this.currentRefreshPollTimer);
+            this.currentRefreshPollTimer = null;
+          }
           if (progressPill && progressMsg) {
+            progressMsg.textContent = t("status.update_failed", { error: (err && (err.detail || err.message)) || t("status.conn_error") });
+          }
+          if (indicatorEl) indicatorEl.style.backgroundColor = "var(--accent-red, #ef4444)";
+          btnRefresh.classList.remove("busy");
+          if (svgIcon) svgIcon.classList.remove("animate-spin");
+          this.updateStatusBar();
+        }
+      });
+    }
+
+    // Stop Refresh Button (Emergency Cancel Circuit Breaker)
+    const btnStopRefresh = document.getElementById("btn-stop-refresh");
+    if (btnStopRefresh) {
+      btnStopRefresh.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        btnStopRefresh.disabled = true;
+        const origHtml = btnStopRefresh.innerHTML;
+        btnStopRefresh.textContent = t("status.stopping") || "正在停止...";
+
+        if (this.currentRefreshPollTimer) {
+          clearInterval(this.currentRefreshPollTimer);
+          this.currentRefreshPollTimer = null;
+        }
+
+        try {
+          const res = await api.stopRefresh();
+          window.dispatchEvent(
+            new CustomEvent("omnirss:toast", {
+              detail: {
+                message: (res && res.message) ? res.message : (t("status.refresh_stopped") || "已立即停止更新"),
+                type: "info",
+              },
+            })
+          );
+        } catch (err) {
+          window.dispatchEvent(
+            new CustomEvent("omnirss:toast", {
+              detail: {
+                message: t("status.stop_failed", { error: err.message }) || `停止更新失敗: ${err.message}`,
+                type: "error",
+              },
+            })
+          );
+        } finally {
+          btnStopRefresh.disabled = false;
+          btnStopRefresh.innerHTML = origHtml;
+
+          if (progressPill) {
             progressPill.classList.add("finished");
-            if (progressFill) progressFill.style.width = "100%";
-            if (progressPercent) progressPercent.textContent = "100%";
-            progressMsg.textContent = `✓ ${msg}`;
+            if (progressMsg) progressMsg.textContent = t("status.refresh_stopped") || "⏹ 已停止更新";
             setTimeout(() => {
               if (progressPill.classList.contains("finished")) {
                 progressPill.style.display = "none";
                 progressPill.classList.remove("finished");
               }
-            }, 5000);
+            }, 2500);
           }
-        } catch (err) {
-          clearInterval(pollTimer);
-          if (progressPill && progressMsg) {
-            progressMsg.textContent = t("status.update_failed", { error: (err && (err.detail || err.message)) || t("status.conn_error") });
+
+          if (btnRefresh) {
+            btnRefresh.classList.remove("busy");
+            const svgIcon = btnRefresh.querySelector("svg");
+            if (svgIcon) svgIcon.classList.remove("animate-spin");
           }
-          if (indicatorEl) indicatorEl.style.backgroundColor = "var(--accent-red, #ef4444)";
-        } finally {
-          clearInterval(pollTimer);
-          btnRefresh.classList.remove("busy");
-          if (svgIcon) svgIcon.classList.remove("animate-spin");
+
+          document.querySelectorAll(".tree-row-btn.spinning").forEach((b) => b.classList.remove("spinning"));
+          await this.reloadFeedsAndCounts();
           this.updateStatusBar();
         }
       });
@@ -364,9 +482,13 @@ class App {
     const btnMarkAll = document.getElementById("btn-mark-all-read");
     if (btnMarkAll) {
       btnMarkAll.addEventListener("click", async () => {
+        const filter = store.get("activeFilter");
         const feedId = store.get("activeFeedId");
-        const catId = store.get("activeCategoryId");
-        await api.markAllRead(feedId, catId);
+        let catId = store.get("activeCategoryId");
+        if (filter === "category" && (catId === null || catId === undefined || catId === "uncategorized")) {
+          catId = "uncategorized";
+        }
+        await api.markAllRead(feedId, catId, null, filter);
         await this.reloadFeedsAndCounts();
 
         if (store.get("autoNextCategory") && store.get("activeFilter") === "category") {
@@ -382,10 +504,19 @@ class App {
     }
 
     // Clear Filter Capsule Bar Button
-    const btnClearFilter = document.getElementById("btn-clear-active-filter");
+    const btnClearFilter = document.getElementById("btn-clear-filter") || document.getElementById("btn-clear-active-filter");
     if (btnClearFilter) {
       btnClearFilter.addEventListener("click", () => {
         this.resetFilterToAll();
+      });
+    }
+
+
+    // User Account & Management Modal Button
+    const btnOpenAccount = document.getElementById("btn-open-account");
+    if (btnOpenAccount) {
+      btnOpenAccount.addEventListener("click", () => {
+        this.modals.openAccountModal("tab-account-security");
       });
     }
 
@@ -393,9 +524,26 @@ class App {
     const btnLogout = document.getElementById("btn-logout");
     if (btnLogout) {
       btnLogout.addEventListener("click", async () => {
-        await api.logout();
-        store.set("user", null);
+        try {
+          await api.logout();
+        } catch (_) {}
         store.set("token", null);
+        store.resetToDefaults(false);
+        const navUserDisplay = document.getElementById("nav-username-display");
+        if (navUserDisplay) navUserDisplay.textContent = "User";
+        const navAdminBadge = document.getElementById("nav-admin-badge");
+        if (navAdminBadge) navAdminBadge.style.display = "none";
+        const userBadge = document.getElementById("user-status-name");
+        if (userBadge) userBadge.textContent = "Guest";
+        this.treeView.render();
+        this.listView.render();
+        this.readerView.render(null);
+        const loginErr = document.getElementById("login-error");
+        if (loginErr) loginErr.style.display = "none";
+        const loginUser = document.getElementById("login-username");
+        const loginPass = document.getElementById("login-password");
+        if (loginUser) loginUser.value = "";
+        if (loginPass) loginPass.value = "";
         this.modals.openModal("modal-login");
       });
     }
@@ -434,12 +582,12 @@ class App {
 
     if (filter === "feed" && feedId) {
       const feed = feeds.find((f) => f.id === feedId);
-      const name = feed ? (feed.title || t("status.feed_scope_label")) : t("status.feed_scope_label");
+      const name = (feed && feed.title && feed.title !== "null" && feed.title !== "undefined") ? feed.title : t("status.feed_scope_label");
       labelEl.textContent = t("nav.mark_read_scope", { name });
     } else if (filter === "category") {
       if (catId) {
         const cat = categories.find((c) => c.id === catId);
-        const name = cat ? cat.name : t("status.cat_scope_label");
+        const name = (cat && cat.name && cat.name !== "null" && cat.name !== "undefined") ? cat.name : t("status.cat_scope_label");
         labelEl.textContent = t("nav.mark_read_scope", { name });
       } else {
         labelEl.textContent = t("status.read_uncat");
@@ -448,7 +596,7 @@ class App {
       const tagId = store.get("activeTagId");
       const tags = store.get("tags") || [];
       const tag = tags.find((tagItem) => tagItem.id === tagId);
-      const name = tag ? tag.name : t("status.tag_scope_label");
+      const name = (tag && tag.name && tag.name !== "null" && tag.name !== "undefined") ? tag.name : t("status.tag_scope_label");
       labelEl.textContent = t("nav.mark_read_scope", { name });
     } else {
       labelEl.textContent = t("tree.mark_all_read");
@@ -456,52 +604,29 @@ class App {
     this.updateFilterBar();
   }
 
-  updateFilterBar() {
-    const bar = document.getElementById("active-filter-bar");
-    const titleEl = document.getElementById("active-filter-title");
-    if (!bar || !titleEl) return;
-
-    const filter = store.get("activeFilter");
-    const feedId = store.get("activeFeedId");
-    const catId = store.get("activeCategoryId");
-    const tagId = store.get("activeTagId");
-    const search = store.get("searchQuery");
-    const feeds = store.get("feeds") || [];
-    const categories = store.get("categories") || [];
-    const tags = store.get("tags") || [];
-
-    const searchPart = search && search.trim() ? ` · ${t("filter_bar.search", { keyword: this.escape(search.trim()) })}` : "";
-
-    if (filter === "feed" && feedId) {
-      const feed = feeds.find((f) => f.id === feedId);
-      const name = feed ? (feed.title || t("status.feed_scope_label")) : t("status.feed_scope_label");
-      titleEl.innerHTML = `${t("filter_bar.lock_feed", { name })}${searchPart}`;
-      bar.style.display = "flex";
-    } else if (filter === "category") {
-      let name = t("tree.uncategorized");
-      if (catId) {
-        const cat = categories.find((c) => c.id === catId);
-        if (cat) name = cat.name;
-      }
-      titleEl.innerHTML = `${t("filter_bar.category", { name })}${searchPart}`;
-      bar.style.display = "flex";
-    } else if (filter === "tag" && tagId) {
-      const tag = tags.find((tagItem) => tagItem.id === tagId);
-      const name = tag ? tag.name : t("status.tag_scope_label");
-      titleEl.innerHTML = `${t("filter_bar.tag", { name })}${searchPart}`;
-      bar.style.display = "flex";
-    } else if (filter === "starred") {
-      titleEl.innerHTML = `${t("filter_bar.starred")}${searchPart}`;
-      bar.style.display = "flex";
-    } else if (filter === "trash") {
-      titleEl.innerHTML = `${t("filter_bar.trash")}${searchPart}`;
-      bar.style.display = "flex";
-    } else if (search && search.trim()) {
-      titleEl.innerHTML = t("filter_bar.search", { keyword: this.escape(search.trim()) });
-      bar.style.display = "flex";
-    } else {
-      bar.style.display = "none";
+  clearSearchOnly() {
+    store.set("searchQuery", "");
+    const searchInput = document.getElementById("global-search");
+    if (searchInput) {
+      searchInput.value = "";
+      searchInput.placeholder = t("nav.search_placeholder") || "搜尋文章 (/)";
     }
+    this.updateFilterBar();
+    this.loadArticles();
+  }
+
+  clearScopeOnly() {
+    store.update({
+      activeFilter: "all",
+      activeFeedId: null,
+      activeCategoryId: null,
+      activeTag: null,
+      activeTagId: null,
+    });
+    this.treeView.updateActiveHighlight();
+    this.updateMarkReadScopeLabel();
+    this.updateFilterBar();
+    this.loadArticles();
   }
 
   resetFilterToAll() {
@@ -514,11 +639,135 @@ class App {
       searchQuery: "",
     });
     const searchInput = document.getElementById("global-search");
-    if (searchInput) searchInput.value = "";
+    if (searchInput) {
+      searchInput.value = "";
+      searchInput.placeholder = t("nav.search_placeholder") || "搜尋文章 (/)";
+    }
     this.treeView.updateActiveHighlight();
     this.updateMarkReadScopeLabel();
     this.updateFilterBar();
     this.loadArticles();
+  }
+
+  updateFilterBar() {
+    const bar = document.getElementById("active-filter-bar");
+    if (!bar) return;
+
+    const capsulesContainer = document.getElementById("active-filter-capsules");
+    const hintEl = document.getElementById("active-filter-hint");
+
+    const filter = store.get("activeFilter");
+    const feedId = store.get("activeFeedId");
+    const catId = store.get("activeCategoryId");
+    const tagId = store.get("activeTagId");
+    const search = store.get("searchQuery");
+    const feeds = store.get("feeds") || [];
+    const categories = store.get("categories") || [];
+    const tags = store.get("tags") || [];
+
+    const isValidSearch = (s) => Boolean(s && typeof s === "string" && s.trim() && s.trim() !== "null" && s.trim() !== "undefined");
+    const hasSearch = isValidSearch(search);
+    const hasScope = filter && filter !== "all";
+
+    if (!hasScope && !hasSearch) {
+      bar.style.display = "none";
+      bar.classList.remove("active");
+      if (capsulesContainer) capsulesContainer.innerHTML = "";
+      return;
+    }
+
+    let capsulesHtml = "";
+
+    // 1. 範圍膠囊 (Scope Capsule - 鎖定頻道/分類/標籤)
+    let scopeLabel = "";
+    if (hasScope) {
+      if (filter === "feed" && feedId) {
+        const feed = feeds.find((f) => f.id === feedId);
+        const name = (feed && feed.title && feed.title !== "null" && feed.title !== "undefined") ? feed.title : t("status.feed_scope_label");
+        scopeLabel = t("filter_bar.lock_feed", { name: this.escape(name) });
+      } else if (filter === "category") {
+        let name = t("tree.uncategorized");
+        if (catId) {
+          const cat = categories.find((c) => c.id === catId);
+          if (cat && cat.name && cat.name !== "null" && cat.name !== "undefined") name = cat.name;
+        }
+        scopeLabel = t("filter_bar.category", { name: this.escape(name) });
+      } else if (filter === "tag" && tagId) {
+        const tag = tags.find((tagItem) => tagItem.id === tagId);
+        const name = (tag && tag.name && tag.name !== "null" && tag.name !== "undefined") ? tag.name : t("status.tag_scope_label");
+        scopeLabel = t("filter_bar.tag", { name: this.escape(name) });
+      } else if (filter === "starred") {
+        scopeLabel = t("filter_bar.starred");
+      } else if (filter === "trash") {
+        scopeLabel = t("filter_bar.trash");
+      } else if (filter === "unread") {
+        scopeLabel = t("filter_bar.unread");
+      }
+
+      if (scopeLabel) {
+        capsulesHtml += `
+          <span class="active-filter-pill scope-pill">
+            <span class="pill-text">${scopeLabel}</span>
+            <button type="button" class="btn-clear-filter btn-clear-scope" title="${t("list.clear_scope", "清除頻道/分類鎖定")}">✕</button>
+          </span>
+        `;
+      }
+    }
+
+    // 2. 搜尋關鍵字膠囊 (Search Keyword Capsule)
+    if (hasSearch) {
+      const searchKeyword = search.trim();
+      const searchLabel = t("filter_bar.search", { keyword: this.escape(searchKeyword) });
+      capsulesHtml += `
+        <span class="active-filter-pill search-pill">
+          <span class="pill-text">${searchLabel}</span>
+          <button type="button" class="btn-clear-filter btn-clear-search" title="${t("list.clear_search", "清除搜尋關鍵字 (按 Esc)")}">✕</button>
+        </span>
+      `;
+    }
+
+    if (!scopeLabel && !hasSearch) {
+      bar.style.display = "none";
+      bar.classList.remove("active");
+      if (capsulesContainer) capsulesContainer.innerHTML = "";
+      return;
+    }
+
+    bar.style.display = "flex";
+    bar.classList.add("active");
+
+    if (capsulesContainer) {
+      capsulesContainer.innerHTML = capsulesHtml;
+
+      // 綁定單獨清除事件
+      const btnClearScope = capsulesContainer.querySelector(".btn-clear-scope");
+      if (btnClearScope) {
+        btnClearScope.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.clearScopeOnly();
+        });
+      }
+      const btnClearSearch = capsulesContainer.querySelector(".btn-clear-search");
+      if (btnClearSearch) {
+        btnClearSearch.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.clearSearchOnly();
+        });
+      }
+    }
+
+    // 提示文字動態切換
+    if (hintEl) {
+      if (hasSearch && hasScope) {
+        hintEl.textContent = t("list.filter_clear_dual_esc", "按 Esc 清除搜尋 (再按 Esc 返回全部)");
+      } else if (hasSearch) {
+        hintEl.textContent = t("list.filter_clear_search_esc", "按 Esc 清除搜尋");
+      } else if (hasScope) {
+        hintEl.textContent = t("list.filter_clear_esc", "按 Esc 返回全部");
+      } else {
+        hintEl.textContent = "";
+      }
+    }
   }
 
   initToastNotifications() {
@@ -549,6 +798,14 @@ class App {
   }
 
   initGlobalEvents() {
+    // Search and Filter Scope event listeners
+    window.addEventListener("omnirss:clear-search", () => {
+      this.clearSearchOnly();
+    });
+    window.addEventListener("omnirss:reset-filter-to-all", () => {
+      this.resetFilterToAll();
+    });
+
     // Typography change event
     window.addEventListener("omnirss:typography-changed", () => {
       this.applyTypography();
@@ -557,10 +814,18 @@ class App {
       this.applyTypography();
     });
 
-    // Select article event with configurable auto-read timer
+    // Select article event with configurable auto-read timer and stale request guard
     window.addEventListener("omnirss:select-article", async (e) => {
       const articleId = e.detail.id;
+      const reqSeq = ++this._selectArticleSeq;
       store.set("selectedArticleId", articleId);
+
+      // 0ms 樂觀渲染：立即以列表既有快取文章資料呈現標題與摘要，消除使用者點擊等待感
+      const articles = store.get("articles") || [];
+      const cachedArt = articles.find((a) => a.id === articleId);
+      if (cachedArt) {
+        store.set("selectedArticle", cachedArt);
+      }
 
       // Clear any pending auto-read timer from previously viewed article
       if (this.readTimer) {
@@ -570,6 +835,10 @@ class App {
 
       try {
         const fullArticle = await api.getArticle(articleId);
+        // Stale guard: discard if user has already switched to another article
+        if (store.get("selectedArticleId") !== articleId || this._selectArticleSeq !== reqSeq) {
+          return;
+        }
         store.set("selectedArticle", fullArticle);
 
         // Auto Full-Text Detection & Fetch (Dual-track: feed level or global setting)
@@ -577,11 +846,12 @@ class App {
         const currentFeed = feeds.find((f) => f.id === fullArticle.feed_id);
         const isFeedAutoFullText = Boolean(currentFeed?.auto_full_text);
         const isGlobalAutoFullText = Boolean(store.get("autoFullText"));
-        const textOnly = (fullArticle.content || "").replace(/<[^>]*>/g, "").trim();
+        const rawContent = fullArticle.content_text || fullArticle.content_html || "";
+        const textOnly = rawContent.replace(/<[^>]*>/g, "").trim();
 
         if ((isFeedAutoFullText || isGlobalAutoFullText) && textOnly.length < 200 && fullArticle.url) {
           api.fetchFullContent(articleId).then((updated) => {
-            if (store.get("selectedArticleId") === articleId && updated) {
+            if (store.get("selectedArticleId") === articleId && this._selectArticleSeq === reqSeq && updated) {
               store.set("selectedArticle", updated);
             }
           }).catch((err) => {
@@ -592,7 +862,8 @@ class App {
         // Delayed Auto Mark as Read Behavior
         const isUnread = fullArticle.is_read === false || fullArticle.is_read === 0 || fullArticle.is_unread === true;
         if (isUnread) {
-          const delaySec = store.get("readDelaySec") ?? 3;
+          const rawDelay = store.get("readDelaySec");
+          const delaySec = rawDelay !== undefined && rawDelay !== null ? parseInt(rawDelay, 10) : 3;
 
           const executeMarkRead = async () => {
             try {
@@ -608,13 +879,10 @@ class App {
                 });
               }
 
-              const articles = store.get("articles") || [];
-              const a = articles.find((item) => item.id === articleId);
-              if (a) {
-                a.is_read = 1;
-                a.is_unread = false;
+              // 本地精準更新列表列狀態，避免 innerHTML 全表重建造成點擊事件中斷
+              if (this.listView) {
+                this.listView.updateRowReadState(articleId, true);
               }
-              store.set("articles", [...articles]);
 
               // Update feed counters
               const feeds = store.get("feeds") || [];
@@ -623,6 +891,13 @@ class App {
                 f.unread_count = Math.max(0, f.unread_count - 1);
                 store.set("feeds", [...feeds]);
               }
+
+              // 廣播全域文章狀態變更事件
+              window.dispatchEvent(
+                new CustomEvent("omnirss:article-state-changed", {
+                  detail: { articleId, patch: { is_read: true, is_unread: false } },
+                })
+              );
             } catch (err) {
               console.warn("Auto mark read failed:", err);
             }
@@ -636,7 +911,14 @@ class App {
           // if delaySec === -1, manual only
         }
       } catch (err) {
-        console.error("Failed to load article details:", err);
+        if (this._selectArticleSeq === reqSeq) {
+          console.error("Failed to load article details:", err);
+          window.dispatchEvent(
+            new CustomEvent("omnirss:toast", {
+              detail: { message: `載入文章失敗: ${err.message}`, type: "error" },
+            })
+          );
+        }
       }
     });
 
@@ -801,10 +1083,12 @@ class App {
       const { type, id } = e.detail;
       try {
         if (type === "feed") {
-          await api.markAllRead(parseInt(id, 10), null);
+          await api.markAllRead(parseInt(id, 10), null, null, "feed");
         } else if (type === "category") {
-          const catId = id === "uncategorized" ? null : parseInt(id, 10);
-          await api.markAllRead(null, catId);
+          const catId = id === "uncategorized" ? "uncategorized" : parseInt(id, 10);
+          await api.markAllRead(null, catId, null, "category");
+        } else if (type === "filter") {
+          await api.markAllRead(null, null, null, id || "all");
         }
         await this.reloadFeedsAndCounts();
 
@@ -950,6 +1234,10 @@ class App {
       this.loadArticles();
     });
 
+    window.addEventListener("omnirss:auth-success", async () => {
+      await this.checkAuthAndLoad();
+    });
+
     window.addEventListener("omnirss:refresh-all", async () => {
       await this.reloadFeedsAndCounts();
       await this.loadArticles();
@@ -976,79 +1264,150 @@ class App {
         }
       }
 
-      let pollTimer = setInterval(async () => {
+      if (this.currentRefreshPollTimer) clearInterval(this.currentRefreshPollTimer);
+      this.currentRefreshPollTimer = setInterval(async () => {
         try {
           const prog = await api.getRefreshProgress();
-          if (prog && prog.is_running) {
+          if (!prog) return;
+
+          if (prog.is_running) {
             const total = Math.max(1, prog.total_feeds || 1);
             const done = prog.completed_feeds || 0;
-            const pct = Math.min(100, Math.max(0, Math.round((done / total) * 100)));
+            const pct = Math.min(99, Math.max(0, Math.round((done / total) * 100)));
             let currentName = prog.current_feed_name || t("status.connecting");
             if (currentName.length > 20) currentName = currentName.slice(0, 18) + "...";
             if (progressFill) progressFill.style.width = `${pct}%`;
             if (progressPercent) progressPercent.textContent = `${pct}%`;
             if (progressMsg) progressMsg.textContent = `[${done}/${total}] ${currentName} (+${prog.new_articles_count || 0})`;
+          } else {
+            // 後端抓取已完成
+            if (this.currentRefreshPollTimer) {
+              clearInterval(this.currentRefreshPollTimer);
+              this.currentRefreshPollTimer = null;
+            }
+            if (progressPill && !progressPill.classList.contains("finished")) {
+              progressPill.classList.add("finished");
+              if (progressFill) progressFill.style.width = "100%";
+              if (progressPercent) progressPercent.textContent = "100%";
+              const updated = prog.total_feeds || prog.completed_feeds || 1;
+              const newArts = prog.new_articles_count || 0;
+              const targetLabel = name || (type === "category" ? t("status.cat_channels") : t("status.feed_source"));
+              const msg = newArts > 0
+                ? t("status.scope_refresh_new", { label: targetLabel, updated, new: newArts })
+                : t("status.scope_refresh_latest", { label: targetLabel, updated });
+              if (progressMsg) progressMsg.textContent = `✓ ${msg}`;
+
+              await this.reloadFeedsAndCounts();
+              await this.loadArticles();
+
+              setTimeout(() => {
+                if (progressPill.classList.contains("finished")) {
+                  progressPill.style.display = "none";
+                  progressPill.classList.remove("finished");
+                }
+              }, 3000);
+            }
+            if (buttonEl) buttonEl.classList.remove("spinning");
+            this.updateStatusBar();
           }
         } catch (_) {}
-      }, 120);
+      }, 200);
 
       try {
-        let res = null;
         if (type === "feed") {
-          res = await api.refreshFeed(parseInt(id, 10));
+          await api.refreshFeed(parseInt(id, 10));
         } else if (type === "category") {
           if (id === "uncategorized") {
-            res = await api.refreshFeeds(null, null);
+            await api.refreshFeeds(null, null);
           } else {
-            res = await api.refreshCategory(parseInt(id, 10));
+            await api.refreshCategory(parseInt(id, 10));
           }
         }
-        clearInterval(pollTimer);
-        await this.reloadFeedsAndCounts();
-        await this.loadArticles();
-
-        const updated = (res && typeof res.updated_feeds === "number") ? res.updated_feeds : 1;
-        const newArts = (res && typeof res.new_articles === "number") ? res.new_articles : 0;
-        const targetLabel = name || (type === "category" ? t("status.cat_channels") : t("status.feed_source"));
-        const msg = newArts > 0
-          ? t("status.scope_refresh_new", { label: targetLabel, updated, new: newArts })
-          : t("status.scope_refresh_latest", { label: targetLabel, updated });
-
-        if (progressPill && progressMsg) {
-          progressPill.classList.add("finished");
-          if (progressFill) progressFill.style.width = "100%";
-          if (progressPercent) progressPercent.textContent = "100%";
-          progressMsg.textContent = `✓ ${msg}`;
-          setTimeout(() => {
-            if (progressPill.classList.contains("finished")) {
-              progressPill.style.display = "none";
-              progressPill.classList.remove("finished");
-            }
-          }, 5000);
-        }
       } catch (err) {
-        clearInterval(pollTimer);
+        if (this.currentRefreshPollTimer) {
+          clearInterval(this.currentRefreshPollTimer);
+          this.currentRefreshPollTimer = null;
+        }
         const errText = (err && (err.detail || err.message)) || String(err || t("status.unknown_error"));
         if (progressPill && progressMsg) {
           progressMsg.textContent = t("status.refresh_failed", { error: errText });
         }
         if (indicatorEl) indicatorEl.style.backgroundColor = "var(--accent-red, #ef4444)";
-      } finally {
-        clearInterval(pollTimer);
         if (buttonEl) buttonEl.classList.remove("spinning");
         this.updateStatusBar();
       }
     });
 
-    // Escape Key to Reset Filter / Clear Lock
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        const hasOpenModal = document.querySelector(".modal-overlay.open");
-        if (!hasOpenModal && store.get("activeFilter") !== "all") {
-          this.resetFilterToAll();
-        }
+    // 監聽所有版面、拖拉、自選欄位變更事件，防抖自動寫入 DB
+    window.addEventListener("omnirss:filter-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:layout-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:column-widths-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:column-order-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:columns-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:reader-toolbar-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:reader-toolbar-order-changed", () => this.saveUserSettingsDebounced());
+    window.addEventListener("omnirss:save-settings-debounced", () => this.saveUserSettingsDebounced());
+  }
+
+  /**
+   * 收集目前前端所有版面、欄位與偏好設定 (Collect Full Settings Payload for DB SSOT).
+   * @returns {Object} 完整設定 Payload
+   */
+  collectFullSettingsPayload() {
+    return {
+      theme: store.get("theme") || "dark",
+      activeFilter: store.get("activeFilter") || "all",
+      activeCategoryId: store.get("activeCategoryId") ?? null,
+      activeFeedId: store.get("activeFeedId") ?? null,
+      activeTagId: store.get("activeTagId") ?? null,
+      timezone: store.get("timezone") || "auto",
+      lang: store.get("lang") || "zh-TW",
+      fontSize: store.get("fontSize") || "medium",
+      fontFamily: store.get("fontFamily") || "system",
+      readerFontSize: store.get("readerFontSize") ?? 15,
+      listFontSize: store.get("listFontSize") ?? 13,
+      treeFontSize: store.get("treeFontSize") ?? 12,
+      readDelaySec: store.get("readDelaySec") ?? 3,
+      autoNextCategory: Boolean(store.get("autoNextCategory")),
+      customShortcuts: store.get("customShortcuts") || {},
+      hideEmptyFeeds: Boolean(store.get("hideEmptyFeeds")),
+      hideRead: Boolean(store.get("hideRead")),
+      markReadOnFeedSwitch: Boolean(store.get("markReadOnFeedSwitch")),
+      refreshOnStartup: store.get("refreshOnStartup") !== false,
+      retentionDays: store.get("retentionDays") ?? 60,
+      pollIntervalMinutes: store.get("pollIntervalMinutes") ?? 30,
+      imageVaultEnabled: store.get("imageVaultEnabled") !== false,
+      autoFullText: Boolean(store.get("autoFullText")),
+      minPublishDate: store.get("minPublishDate") || null,
+      forceMinDate: Boolean(store.get("forceMinDate")),
+      columnOrder: store.get("columnOrder") || ["status", "star", "title", "feed", "date", "author", "tags"],
+      columnWidths: store.get("columnWidths") || { status: 28, star: 28, title: 0, feed: 140, date: 120, author: 100, tags: 100 },
+      columns: store.get("columns") || { status: true, star: true, title: true, feed: true, date: true, author: true, tags: false },
+      readerToolbarOrder: store.get("readerToolbarOrder") || ["star", "toggle_read", "run_plugins", "tag", "trash", "fetch_full", "copy_link", "open_url", "font_dec", "font_inc"],
+      readerToolbarVisible: store.get("readerToolbarVisible") || { star: true, toggle_read: true, run_plugins: true, tag: true, trash: true, fetch_full: true, copy_link: true, open_url: true, font_dec: true, font_inc: true },
+      readerToolbarMode: store.get("readerToolbarMode") || "both",
+      tagsPosition: store.get("tagsPosition") || "bottom",
+      tagsPaneHeight: store.get("tagsPaneHeight") ?? 140,
+      collapsedCategories: store.get("collapsedCategories") || [],
+      treeWidth: store.get("treeWidth") ?? 240,
+      listHeight: store.get("listHeight") ?? 45,
+    };
+  }
+
+  /**
+   * 防抖自動同步使用者設定至後端資料庫 (Debounced Auto-Persist Settings to DB).
+   */
+  saveUserSettingsDebounced() {
+    clearTimeout(this._saveSettingsTimer);
+    this._saveSettingsTimer = setTimeout(async () => {
+      if (!store.get("user")) return;
+      try {
+        const payload = this.collectFullSettingsPayload();
+        await api.updateUserSettings(payload);
+      } catch (err) {
+        console.warn("Auto-persisting settings to DB failed:", err);
       }
-    });
+    }, 400);
   }
 
   showToast(message, type = "info") {
@@ -1061,95 +1420,181 @@ class App {
 
   async checkAuthAndLoad() {
     try {
+      store.resetToDefaults(true);
       const me = await api.getMe();
       store.set("user", me);
+
+      try {
+        const pluginsList = await api.getPlugins();
+        store.set("plugins", pluginsList || []);
+      } catch (e) {
+        store.set("plugins", []);
+      }
+
       const userBadge = document.getElementById("user-status-name");
       if (userBadge) userBadge.textContent = me.username;
 
-      // Hydrate settings from user profile if available
+      const navUserDisplay = document.getElementById("nav-username-display");
+      if (navUserDisplay) navUserDisplay.textContent = me.username || "User";
+
+      const navAdminBadge = document.getElementById("nav-admin-badge");
+      if (navAdminBadge) {
+        navAdminBadge.style.display = me.is_admin ? "inline-block" : "none";
+      }
+
+      // Hydrate all settings from user profile (Single Source of Truth from DB - Data-Driven Map)
       if (me.settings && typeof me.settings === "object" && Object.keys(me.settings).length > 0) {
-        if (me.settings.theme) {
-          store.set("theme", me.settings.theme);
-          this.applyTheme(me.settings.theme);
-        }
-        if (me.settings.fontSize) {
-          store.set("fontSize", me.settings.fontSize);
-        }
-        if (me.settings.fontFamily) {
-          store.set("fontFamily", me.settings.fontFamily);
-        }
-        if (me.settings.readerFontSize !== undefined) {
-          store.set("readerFontSize", me.settings.readerFontSize);
-        }
-        if (me.settings.listFontSize !== undefined) {
-          store.set("listFontSize", me.settings.listFontSize);
-        }
-        if (me.settings.treeFontSize !== undefined) {
-          store.set("treeFontSize", me.settings.treeFontSize);
+        const SETTINGS_MAP = [
+          { key: "theme", action: (val) => { store.set("theme", val); this.applyTheme(val); } },
+          {
+            key: "activeFilter",
+            aliases: ["default_view"],
+            action: (val) => {
+              if (val && ["all", "unread", "starred", "trash", "category", "feed", "tag"].includes(val)) {
+                store.set("activeFilter", val);
+              }
+            },
+          },
+          { key: "activeCategoryId" },
+          { key: "activeFeedId" },
+          { key: "activeTagId" },
+          { key: "timezone" },
+          {
+            key: "lang",
+            aliases: ["language"],
+            action: (val) => {
+              store.set("lang", val);
+              const btnLang = document.getElementById("btn-toggle-lang");
+              if (btnLang) btnLang.textContent = val === "zh-TW" ? "繁中" : "EN";
+              updateDomTranslations();
+            },
+          },
+          { key: "fontSize" },
+          { key: "fontFamily" },
+          { key: "readerFontSize" },
+          { key: "listFontSize" },
+          { key: "treeFontSize" },
+          { key: "readDelaySec" },
+          { key: "autoNextCategory", cast: Boolean },
+          { key: "customShortcuts", aliases: ["customKeybindings"], defaultVal: {} },
+          { key: "hideEmptyFeeds", cast: Boolean },
+          { key: "hideRead", cast: Boolean },
+          { key: "markReadOnFeedSwitch", cast: Boolean },
+          { key: "refreshOnStartup", cast: (v) => v !== false },
+          { key: "autoFullText", cast: Boolean },
+          { key: "retentionDays" },
+          { key: "pollIntervalMinutes" },
+          { key: "imageVaultEnabled", cast: (v) => v !== false },
+          { key: "minPublishDate", aliases: ["min_publish_date"], defaultVal: "" },
+          { key: "forceMinDate", aliases: ["force_min_date"], cast: Boolean },
+          { key: "columnOrder", validate: Array.isArray },
+          { key: "columnWidths", validate: (v) => typeof v === "object" && v !== null },
+          { key: "columns", validate: (v) => typeof v === "object" && v !== null },
+          { key: "readerToolbarOrder", validate: Array.isArray },
+          { key: "readerToolbarVisible", validate: (v) => typeof v === "object" && v !== null },
+          { key: "readerToolbarMode" },
+          { key: "tagsPosition" },
+          { key: "tagsPaneHeight" },
+          { key: "collapsedCategories", validate: Array.isArray },
+          {
+            key: "treeWidth",
+            action: (val) => {
+              store.set("treeWidth", val);
+              const paneTree = document.querySelector(".pane-tree");
+              if (paneTree) paneTree.style.width = `${val}px`;
+            },
+          },
+          {
+            key: "listHeight",
+            action: (val) => {
+              store.set("listHeight", val);
+              const paneList = document.querySelector(".pane-list");
+              if (paneList) paneList.style.height = `${val}%`;
+            },
+          },
+        ];
+
+        for (const rule of SETTINGS_MAP) {
+          let val = me.settings[rule.key];
+          if (val === undefined && rule.aliases) {
+            for (const alias of rule.aliases) {
+              if (me.settings[alias] !== undefined) {
+                val = me.settings[alias];
+                break;
+              }
+            }
+          }
+          if (val === undefined && rule.defaultVal !== undefined) {
+            val = rule.defaultVal;
+          }
+          if (val !== undefined) {
+            if (rule.validate && !rule.validate(val)) continue;
+            const finalVal = rule.cast ? rule.cast(val) : val;
+            if (rule.action) {
+              rule.action(finalVal);
+            } else {
+              store.set(rule.key, finalVal);
+            }
+          }
         }
         this.applyTypography();
-        if (me.settings.readDelaySec !== undefined) {
-          store.set("readDelaySec", me.settings.readDelaySec);
-        }
-        if (me.settings.autoNextCategory !== undefined) {
-          store.set("autoNextCategory", me.settings.autoNextCategory);
-        }
-        if (me.settings.customKeybindings) {
-          store.set("customKeybindings", me.settings.customKeybindings);
-        }
-        if (me.settings.hideEmptyFeeds !== undefined) {
-          store.set("hideEmptyFeeds", me.settings.hideEmptyFeeds);
-        }
-        if (me.settings.markReadOnFeedSwitch !== undefined) {
-          store.set("markReadOnFeedSwitch", me.settings.markReadOnFeedSwitch);
-        }
-        if (me.settings.refreshOnStartup !== undefined) {
-          store.set("refreshOnStartup", me.settings.refreshOnStartup);
-        }
-        if (me.settings.retentionDays !== undefined) {
-          store.set("retentionDays", me.settings.retentionDays);
-        }
-        if (me.settings.pollIntervalMinutes !== undefined) {
-          store.set("pollIntervalMinutes", me.settings.pollIntervalMinutes);
-        }
-        if (me.settings.imageVaultEnabled !== undefined) {
-          store.set("imageVaultEnabled", me.settings.imageVaultEnabled);
-        }
-        if (me.settings.columnOrder && Array.isArray(me.settings.columnOrder)) {
-          store.set("columnOrder", me.settings.columnOrder);
-        }
-        if (me.settings.columnWidths && typeof me.settings.columnWidths === "object") {
-          store.set("columnWidths", me.settings.columnWidths);
-        }
-        if (me.settings.readerToolbarOrder && Array.isArray(me.settings.readerToolbarOrder)) {
-          store.set("readerToolbarOrder", me.settings.readerToolbarOrder);
-        }
-        if (me.settings.tagsPosition) {
-          store.set("tagsPosition", me.settings.tagsPosition);
-        }
-        if (me.settings.tagsPaneHeight !== undefined) {
-          store.set("tagsPaneHeight", me.settings.tagsPaneHeight);
-        }
+      }
+
+      // Synchronize component views and styles
+      if (this.listView) {
+        this.listView.applyColumnWidthsStyle();
+        this.listView.renderHeaders();
+      }
+      if (this.columnPicker) {
+        this.columnPicker.render();
+      }
+      if (this.treeView) {
+        this.treeView.render();
+      }
+
+      // Synchronize button states
+      const btnUnreadOnly = document.getElementById("btn-tree-unread-only");
+      if (btnUnreadOnly) {
+        btnUnreadOnly.classList.toggle("active", Boolean(store.get("hideEmptyFeeds")));
+      }
+      const btnHideRead = document.getElementById("btn-toggle-hide-read");
+      if (btnHideRead) {
+        btnHideRead.classList.toggle("active", Boolean(store.get("hideRead")));
       }
 
       await this.reloadFeedsAndCounts();
+      if (this.treeView) {
+        this.treeView.render();
+      }
       await this.loadArticles();
 
-      // QuiteRSS Feature: Auto refresh all feeds on startup/login
-      if (store.get("refreshOnStartup") !== false) {
+      const searchInput = document.getElementById("global-search");
+      if (searchInput) {
+        const q = store.get("searchQuery");
+        searchInput.value = (q && typeof q === "string" && q !== "null" && q !== "undefined") ? q : "";
+        searchInput.placeholder = t("nav.search_placeholder") || "搜尋文章 (/)";
+      }
+
+      // QuiteRSS Feature: Auto refresh all feeds on startup/login (預設停用，僅在用戶明確開啟時觸發，保障極速載入)
+      if (Boolean(store.get("refreshOnStartup"))) {
         setTimeout(() => {
           const btnRefresh = document.getElementById("btn-refresh-all");
           if (btnRefresh && !btnRefresh.classList.contains("busy")) {
             btnRefresh.click();
           }
-        }, 600);
+        }, 1500);
       }
     } catch (_) {
+      store.resetToDefaults(false);
+      this.treeView.render();
+      this.listView.render();
+      this.readerView.render(null);
       this.modals.openModal("modal-login");
     }
   }
 
   async reloadFeedsAndCounts() {
+    if (!store.get("user")) return;
     try {
       const [cats, feeds, tags, treeData] = await Promise.all([
         api.getCategories(),
@@ -1188,40 +1633,37 @@ class App {
     const feeds = store.get("feeds") || [];
     const totalFeeds = feeds.length;
     const totalUnread = feeds.reduce((sum, f) => sum + (f.unread_count || 0), 0);
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
     // Dynamic Title Unread Badge (QuiteRSS Alignment)
     document.title = totalUnread > 0 ? `(${totalUnread}) OmniRSS` : "OmniRSS";
 
-    connTextEl.textContent = t("status.conn_ready_summary", { count: totalFeeds, time: timeStr });
+    if (this.lastRefreshedAt) {
+      const timeStr = this.lastRefreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      connTextEl.textContent = t("status.conn_ready_summary", { count: totalFeeds, time: timeStr });
+    } else {
+      connTextEl.textContent = t("status.conn_ready_summary_nosync", { count: totalFeeds });
+    }
+
     if (indicatorEl) {
       indicatorEl.style.backgroundColor = "var(--accent-green, #4ade80)";
     }
   }
 
   async loadArticles(isAppend = false) {
+    if (!store.get("user")) {
+      store.set("articles", []);
+      this.listView.render();
+      return;
+    }
     const filter = store.get("activeFilter");
     const feedId = store.get("activeFeedId");
     const categoryId = store.get("activeCategoryId");
     const tagId = store.get("activeTagId");
     const search = store.get("searchQuery");
-    let hideRead = store.get("hideRead");
-
-    // 獨立分類專屬 hide_read 設定隔離，避免污染全域與其他分類
-    if (filter === "category" && categoryId !== null) {
-      try {
-        const catPrefs = JSON.parse(localStorage.getItem(`omnirss:cat-prefs:${categoryId}`) || "{}");
-        if (catPrefs.hide_read !== undefined) {
-          hideRead = Boolean(catPrefs.hide_read);
-        }
-      } catch (_) {}
-    }
-
-    // 更新頂部「隱藏已讀」按鈕外觀狀態以匹配當前視圖有效狀態
+    const hideRead = Boolean(store.get("hideRead"));
     const btnHideRead = document.getElementById("btn-toggle-hide-read");
     if (btnHideRead) {
-      btnHideRead.classList.toggle("active", Boolean(hideRead));
+      btnHideRead.classList.toggle("active", hideRead);
     }
 
     if (!isAppend) {
@@ -1239,11 +1681,12 @@ class App {
       page,
       page_size: pageSize,
     };
-    if (search && search.trim()) {
+    if (search && typeof search === "string" && search.trim() && search.trim() !== "null" && search.trim() !== "undefined") {
       params.search = search.trim();
     }
-    // 智慧已讀過濾：若 filter 為 "unread" 或 hideRead 為 true 則僅拉取未讀文章
-    const shouldFilterUnread = filter === "unread" || Boolean(hideRead);
+    // 智慧已讀過濾：若 filter 為 "unread" 或 hideRead 為 true（且當前不是標籤視圖）則僅拉取未讀文章
+    // 標籤為典藏/知識庫性質，一律顯示全部標籤文章，不隱藏已讀；同時保留頂端狀態供其他分類/來源使用
+    const shouldFilterUnread = filter === "unread" || (Boolean(hideRead) && filter !== "tag");
     if (shouldFilterUnread) params.is_unread = true;
     if (filter === "starred") params.is_starred = true;
     if (filter === "trash") params.is_trash = true;

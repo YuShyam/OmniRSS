@@ -168,3 +168,142 @@ async def test_scheduler_trigger_refresh_and_progress(tmp_path):
     assert prog["completed"] == 3
     assert prog["new_articles"] == 3
 
+
+@pytest.mark.asyncio
+async def test_scheduler_cancel_refresh(tmp_path):
+    """測試手動即時終止所有進行中的更新任務 (Test cancelling ongoing crawl refresh)."""
+    import asyncio
+    db_file = tmp_path / "test_cancel.db"
+    db_mgr = DatabaseManager(str(db_file))
+    await db_mgr.initialize()
+
+    async with db_mgr.get_connection() as conn:
+        for i in range(5):
+            await conn.execute(
+                "INSERT INTO feeds (title, feed_url, check_interval_minutes, is_paused) VALUES (?, ?, 60, 0)",
+                (f"Feed {i}", f"https://slow.example.com/{i}"),
+            )
+        await conn.commit()
+
+    class SlowMockCrawler:
+        async def fetch_feed(self, url, etag=None, last_modified=None, requires_flaresolverr=False):
+            await asyncio.sleep(2.0)
+            return CrawlResult(url=url, status_code=200, is_modified=True, articles=[])
+
+    scheduler = OmniScheduler(db_manager=db_mgr, crawler_engine=SlowMockCrawler())
+
+    # 背景啟動更新
+    refresh_task = asyncio.create_task(scheduler.trigger_refresh())
+    await asyncio.sleep(0.1)
+    assert scheduler.get_refresh_progress()["is_running"] is True
+
+    # 觸發中斷
+    cancelled = scheduler.cancel_refresh()
+    assert cancelled >= 1
+    assert scheduler.get_refresh_progress()["is_running"] is False
+
+    await refresh_task
+
+
+@pytest.mark.asyncio
+async def test_scheduler_5_tier_ingestion_pipeline(tmp_path):
+    """測試 5 階梯標準收錄管線 (Test 5-tier ingestion pipeline: pre-filter -> enrichment -> rule matching -> atomic DB write)."""
+    db_file = tmp_path / "test_5tier.db"
+    db_mgr = DatabaseManager(str(db_file))
+    await db_mgr.initialize()
+
+    # 1. 建立測試用戶與設定包含內文關鍵字之規則
+    async with db_mgr.get_connection() as conn:
+        u_cur = await conn.execute(
+            "INSERT INTO users (username, password_hash, api_key) VALUES (?, ?, ?)",
+            ("bob", "hash123", "ak_bob_1234567890"),
+        )
+        user_id = u_cur.lastrowid
+
+        f_cur = await conn.execute(
+            """
+            INSERT INTO feeds (title, feed_url, check_interval_minutes, is_paused, auto_full_text)
+            VALUES (?, ?, ?, 0, 1)
+            """,
+            ("Tech News", "https://tech.example.com/feed.xml", 60),
+        )
+        feed_id = f_cur.lastrowid
+
+        await conn.execute(
+            "INSERT INTO user_feeds (user_id, feed_id) VALUES (?, ?)",
+            (user_id, feed_id),
+        )
+
+        # 規則：內文包含「旗艦晶片」-> 自動打標籤「科技」
+        rule_conds = [{"field": "content", "operator": "contains", "value": "旗艦晶片", "case_sensitive": False}]
+        rule_acts = [{"action": "add_tag", "params": {"tag_name": "科技"}}]
+        await conn.execute(
+            """
+            INSERT INTO user_rules (user_id, name, is_enabled, sort_order, conditions_json, actions_json)
+            VALUES (?, ?, 1, 1, ?, ?)
+            """,
+            (user_id, "科技晶片標記", json.dumps(rule_conds), json.dumps(rule_acts)),
+        )
+        await conn.commit()
+
+    # 2. 模擬爬蟲抓取結果 (RSS 只有 50 字摘要，但 fetch_web_page 提供完整全文)
+    class PipelineMockCrawler:
+        async def fetch_feed(self, url, etag=None, last_modified=None, requires_flaresolverr=False, force_refresh=False):
+            return CrawlResult(
+                url=url,
+                status_code=200,
+                is_modified=True,
+                articles=[
+                    ArticleDTO(
+                        guid="art-chip-1",
+                        url="https://tech.example.com/chip-review",
+                        title="最新處理器評測摘要",
+                        snippet="處理器發表會重點...",
+                        content_html="<p>處理器發表會重點...</p>",
+                        content_text="處理器發表會重點...",
+                    )
+                ],
+            )
+
+        async def fetch_web_page(self, url, requires_flaresolverr=False):
+            html = """
+            <html>
+                <head><title>最新處理器評測</title></head>
+                <body>
+                    <article>
+                        <h1>最新處理器深度評測</h1>
+                        <p>這款全新的旗艦晶片採用了 2nm 先進製程，效能大幅提升且功耗顯著下降。</p>
+                        <p>在各項基準測試中展現出極致實力。</p>
+                    </article>
+                </body>
+            </html>
+            """
+            return 200, html
+
+    scheduler = OmniScheduler(db_manager=db_mgr, crawler_engine=PipelineMockCrawler())
+
+    # 3. 執行輪詢
+    processed = await scheduler.poll_due_feeds()
+    assert processed == 1
+
+    # 4. 驗證：入庫的文章在寫入時就已經包含完整全文與正確的規則標籤
+    async with db_mgr.get_connection() as conn:
+        a_cur = await conn.execute("SELECT * FROM articles_hot WHERE feed_id = ?", (feed_id,))
+        art = await a_cur.fetchone()
+        assert art is not None
+        assert "旗艦晶片" in art["content_html"]
+
+        # 驗證規則引擎成功命中全文並打上「科技」標籤
+        t_cur = await conn.execute(
+            """
+            SELECT t.name FROM tags t
+            JOIN article_tags at ON t.id = at.tag_id
+            WHERE at.article_id = ?
+            """,
+            (art["id"],),
+        )
+        tags = [r["name"] for r in await t_cur.fetchall()]
+        assert "科技" in tags
+
+
+

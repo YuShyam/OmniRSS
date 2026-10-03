@@ -85,18 +85,23 @@ async def login(
     conn: aiosqlite.Connection = Depends(get_db),
 ) -> TokenResponse:
     """使用者登入並核發 Access Token (User Login)."""
+    from loguru import logger
+    
     cursor = await conn.execute(
         "SELECT id, username, password_hash FROM users WHERE username = ?",
-        (req.username,),
+        (req.username.strip(),),
     )
     user = await cursor.fetchone()
     if not user or not PasswordHasher.verify_password(
         user["password_hash"], req.password
     ):
+        logger.warning(f"[SECURITY ALERT] 嘗試登入失敗: 帳號 '{req.username}' 密碼驗證未通過")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
+
+    logger.info(f"[AUDIT] 使用者 '{user['username']}' 成功登入系統")
 
     expires_delta = timedelta(days=7)
     token = TokenManager.create_access_token(
@@ -134,8 +139,8 @@ async def get_me(user: dict = Depends(get_current_user)) -> UserDTO:
     settings = {}
     try:
         settings = json.loads(user.get("settings_json") or "{}")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(f"Failed to parse user settings_json for user {user.get('id')}: {exc}")
 
     return UserDTO(
         id=user["id"],
@@ -170,7 +175,8 @@ async def get_user_settings(
     settings: dict = {}
     try:
         settings = json.loads(user.get("settings_json") or "{}")
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"Failed to parse user settings_json in get_user_settings: {exc}")
         settings = {}
     return UserSettingsDTO(settings=settings)
 
@@ -185,7 +191,8 @@ async def update_user_settings(
     existing: dict = {}
     try:
         existing = json.loads(user.get("settings_json") or "{}")
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"Failed to parse existing settings_json in update_user_settings: {exc}")
         existing = {}
 
     existing.update(req.settings)

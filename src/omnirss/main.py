@@ -4,6 +4,7 @@ This module configures the FastAPI application, lifespan database/scheduler mana
 security headers, RFC 7807 error middleware, and domain router mounts.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -16,6 +17,7 @@ from omnirss.api.routers import (
     assets_router,
     auth_router,
     user_router,
+    users_router,
     articles_router,
     backup_router,
     edge_router,
@@ -66,6 +68,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_global_scheduler(_SCHEDULER)
     _SCHEDULER.start()
 
+    # 自動掃描並掛載外掛生態
+    logger.info("Discovering and loading OmniRSS microkernel plugins...")
+    from omnirss.core.plugin_manager import get_plugin_manager
+    pm = get_plugin_manager()
+    plugin_count = len(pm.loaded_plugins)
+    logger.info(f"Plugin subsystem initialized with {plugin_count} active plugin(s).")
+
     yield
 
     # 關機階段：優雅停止排程器並取消所有爬蟲協程，然後刷盤 SQLite WAL
@@ -98,14 +107,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS 跨來源資源共用設定
+# CORS 跨來源資源共用設定 (Header-based Auth 相容模式)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 @app.middleware("http")
@@ -116,6 +126,12 @@ async def security_headers_and_error_middleware(request: Request, call_next):
         # 注入 6 大安全防禦標頭
         for k, v in get_security_headers().items():
             response.headers[k] = v
+        # 對於前端 HTML/JS/CSS 靜態資源強制 no-cache 避免瀏覽器快取過期腳本引發 Runtime 錯誤
+        req_path = request.url.path.lower()
+        if req_path.endswith((".js", ".css", ".html")) or req_path in ("/", "/index.html"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
     except Exception as exc:
         logger.exception(f"Unhandled server exception on {request.url.path}: {exc}")
@@ -148,6 +164,7 @@ async def health_check() -> dict:
 app.include_router(edge_router)
 app.include_router(auth_router)
 app.include_router(user_router)
+app.include_router(users_router)
 app.include_router(feeds_router)
 
 app.include_router(articles_router)
@@ -167,4 +184,4 @@ if web_dir.is_dir():
 
 
 if __name__ == "__main__":
-    uvicorn.run("omnirss.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("omnirss.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["src", "plugins"])

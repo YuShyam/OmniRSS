@@ -45,7 +45,11 @@ class BasePlugin(ABC):
 
         :param new_config: 新的設定字典 (New merged config dictionary)
         """
-        self.config = new_config
+        if isinstance(new_config, dict):
+            self.config.update(new_config)
+        else:
+            self.config = new_config or {}
+
 
 
 class BaseSourcePlugin(BasePlugin):

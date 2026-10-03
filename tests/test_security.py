@@ -131,3 +131,19 @@ def test_security_headers() -> None:
     assert "connect-src 'self'" in headers["Content-Security-Policy"]
     assert headers["X-Frame-Options"] == "DENY"
     assert headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_hardware_secret_generation() -> None:
+    """測試硬體金鑰衍生密鑰之確定性與長度 (Test deterministic hardware secret generation)."""
+    from omnirss.core.config import generate_hardware_secret, get_base_dir
+
+    secret1 = generate_hardware_secret()
+    secret2 = generate_hardware_secret()
+
+    assert isinstance(secret1, str)
+    assert len(secret1) == 64
+    assert secret1 == secret2  # 同一台機器多次調用必須完全一致
+
+    base_dir = get_base_dir()
+    assert base_dir.is_dir()
+

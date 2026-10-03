@@ -5,9 +5,13 @@ unsubscription, and manual refresh triggers.
 """
 
 import asyncio
+import json
+import logging
 from typing import Optional
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from omnirss.api.dependencies import get_current_user, get_db, get_write_db
 from omnirss.api.schemas import (
@@ -47,11 +51,11 @@ async def test_feed_url(
             force_refresh=True,
             auth=auth,
         )
-        if crawl_res.error:
+        if crawl_res.error_message:
             return FeedTestResponse(
                 status="error",
                 http_status=crawl_res.status_code or 400,
-                error_detail=crawl_res.error,
+                error_detail=crawl_res.error_message,
             )
 
         title = crawl_res.feed_metadata.title if crawl_res.feed_metadata else None
@@ -88,7 +92,9 @@ async def get_feed_tree(
     # 1. 查詢所有分類
     c_cur = await conn.execute(
         """
-        SELECT id, name, sort_order
+        SELECT id, name, sort_order, custom_retention_days, custom_interval_minutes,
+               custom_min_date, COALESCE(force_min_date, 0) as force_min_date,
+               COALESCE(auto_full_text, 0) as auto_full_text, view_preferences
         FROM categories
         WHERE user_id = ?
         ORDER BY sort_order ASC, name ASC
@@ -123,11 +129,24 @@ async def get_feed_tree(
     # 組織樹狀結構
     cat_dict: dict[Optional[int], FeedTreeCategoryDTO] = {}
     for c in categories_rows:
+        view_prefs = None
+        if c["view_preferences"]:
+            try:
+                view_prefs = json.loads(c["view_preferences"]) if isinstance(c["view_preferences"], str) else c["view_preferences"]
+            except Exception as exc:
+                logger.warning(f"Failed to parse category view_preferences (ID {c['id']}): {exc}")
+                view_prefs = None
         cat_dict[c["id"]] = FeedTreeCategoryDTO(
             id=c["id"],
             name=c["name"],
             sort_order=c["sort_order"],
             unread_count=0,
+            custom_retention_days=c["custom_retention_days"],
+            custom_interval_minutes=c["custom_interval_minutes"],
+            custom_min_date=c["custom_min_date"],
+            force_min_date=bool(c["force_min_date"]),
+            auto_full_text=bool(c["auto_full_text"]),
+            view_preferences=view_prefs,
             feeds=[],
         )
 
@@ -210,6 +229,7 @@ async def list_categories(
         """
         SELECT c.id, c.name, c.sort_order, c.custom_retention_days, c.custom_interval_minutes,
                c.custom_min_date, COALESCE(c.force_min_date, 0) as force_min_date,
+               COALESCE(c.auto_full_text, 0) as auto_full_text, c.view_preferences,
                (
                    SELECT COUNT(*) FROM articles_hot a
                    JOIN user_feeds uf ON a.feed_id = uf.feed_id
@@ -229,20 +249,31 @@ async def list_categories(
         (user_id,),
     )
     rows = await cur.fetchall()
-    return [
-        CategoryDTO(
-            id=r["id"],
-            name=r["name"],
-            sort_order=r["sort_order"],
-            unread_count=r["unread_count"] or 0,
-            custom_retention_days=r["custom_retention_days"],
-            custom_interval_minutes=r["custom_interval_minutes"],
-            custom_min_date=r["custom_min_date"],
-            force_min_date=bool(r["force_min_date"]),
-            is_paused=bool(r["is_paused"]),
+    categories_list = []
+    for r in rows:
+        view_prefs = None
+        if r["view_preferences"]:
+            try:
+                view_prefs = json.loads(r["view_preferences"]) if isinstance(r["view_preferences"], str) else r["view_preferences"]
+            except Exception as exc:
+                logger.warning(f"Failed to parse category view_preferences (ID {r['id']}): {exc}")
+                view_prefs = None
+        categories_list.append(
+            CategoryDTO(
+                id=r["id"],
+                name=r["name"],
+                sort_order=r["sort_order"],
+                unread_count=r["unread_count"] or 0,
+                custom_retention_days=r["custom_retention_days"],
+                custom_interval_minutes=r["custom_interval_minutes"],
+                custom_min_date=r["custom_min_date"],
+                force_min_date=bool(r["force_min_date"]),
+                auto_full_text=bool(r["auto_full_text"]),
+                view_preferences=view_prefs,
+                is_paused=bool(r["is_paused"]),
+            )
         )
-        for r in rows
-    ]
+    return categories_list
 
 
 @router.get("/categories/{category_id}/stats", response_model=dict)
@@ -254,7 +285,7 @@ async def get_category_stats(
     """取得特定分類的即時健康度與統計資訊 (Get Category Real-time Stats Dashboard)."""
     user_id = user["id"]
     cat_cur = await conn.execute(
-        "SELECT id, name, custom_retention_days, custom_interval_minutes, custom_min_date, COALESCE(force_min_date, 0) as force_min_date FROM categories WHERE id = ? AND user_id = ?",
+        "SELECT id, name, custom_retention_days, custom_interval_minutes, custom_min_date, COALESCE(force_min_date, 0) as force_min_date, COALESCE(auto_full_text, 0) as auto_full_text, view_preferences FROM categories WHERE id = ? AND user_id = ?",
         (category_id, user_id),
     )
     cat_row = await cat_cur.fetchone()
@@ -284,6 +315,14 @@ async def get_category_stats(
     paused_feed_count = stats["paused_feed_count"] or 0
     is_paused = feed_count > 0 and (feed_count == paused_feed_count)
 
+    view_prefs = None
+    if cat_row["view_preferences"]:
+        try:
+            view_prefs = json.loads(cat_row["view_preferences"]) if isinstance(cat_row["view_preferences"], str) else cat_row["view_preferences"]
+        except Exception as exc:
+            logger.warning(f"Failed to parse category stats view_preferences (ID {category_id}): {exc}")
+            view_prefs = None
+
     return {
         "category_id": category_id,
         "name": cat_row["name"],
@@ -291,6 +330,8 @@ async def get_category_stats(
         "custom_interval_minutes": cat_row["custom_interval_minutes"],
         "custom_min_date": cat_row["custom_min_date"],
         "force_min_date": bool(cat_row["force_min_date"]),
+        "auto_full_text": bool(cat_row["auto_full_text"]),
+        "view_preferences": view_prefs,
         "feed_count": feed_count,
         "article_count": stats["article_count"] or 0,
         "unread_count": stats["unread_count"] or 0,
@@ -300,7 +341,7 @@ async def get_category_stats(
     }
 
 
-@router.post("/categories", response_model=CategoryDTO)
+@router.post("/categories", response_model=CategoryDTO, status_code=status.HTTP_201_CREATED)
 async def create_category(
     req: CategoryCreateRequest,
     user: dict = Depends(get_current_user),
@@ -308,13 +349,19 @@ async def create_category(
 ) -> CategoryDTO:
     """建立新分類目錄 (Create Category)."""
     user_id = user["id"]
+    if isinstance(req.view_preferences, str):
+        view_prefs_json = req.view_preferences
+    elif req.view_preferences is not None:
+        view_prefs_json = json.dumps(req.view_preferences, ensure_ascii=False)
+    else:
+        view_prefs_json = "{}"
     try:
         cur = await conn.execute(
             """
-            INSERT INTO categories (user_id, name, sort_order, custom_retention_days, custom_interval_minutes, custom_min_date, force_min_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO categories (user_id, name, sort_order, custom_retention_days, custom_interval_minutes, custom_min_date, force_min_date, auto_full_text, view_preferences)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, req.name, req.sort_order, req.custom_retention_days, req.custom_interval_minutes, req.custom_min_date, 1 if req.force_min_date else 0),
+            (user_id, req.name, req.sort_order, req.custom_retention_days, req.custom_interval_minutes, req.custom_min_date, 1 if req.force_min_date else 0, 1 if req.auto_full_text else 0, view_prefs_json),
         )
         await conn.commit()
         cat_id = cur.lastrowid
@@ -327,6 +374,8 @@ async def create_category(
             custom_interval_minutes=req.custom_interval_minutes,
             custom_min_date=req.custom_min_date,
             force_min_date=req.force_min_date,
+            auto_full_text=req.auto_full_text,
+            view_preferences=req.view_preferences,
             is_paused=False,
         )
     except aiosqlite.IntegrityError:
@@ -343,10 +392,10 @@ async def update_category(
     user: dict = Depends(get_current_user),
     conn: aiosqlite.Connection = Depends(get_write_db),
 ) -> CategoryDTO:
-    """更新分類目錄與連動控制 (Update Category & Cascade Pause/Resume/Interval Feeds)."""
+    """更新分類目錄與連動控制 (Update Category & Cascade Pause/Resume/Interval/Auto-Full-Text Feeds)."""
     user_id = user["id"]
     cur = await conn.execute(
-        "SELECT id, name, sort_order, unread_count, custom_retention_days, custom_interval_minutes, custom_min_date, COALESCE(force_min_date, 0) as force_min_date FROM categories WHERE id = ? AND user_id = ?",
+        "SELECT id, name, sort_order, unread_count, custom_retention_days, custom_interval_minutes, custom_min_date, COALESCE(force_min_date, 0) as force_min_date, COALESCE(auto_full_text, 0) as auto_full_text, view_preferences FROM categories WHERE id = ? AND user_id = ?",
         (category_id, user_id),
     )
     row = await cur.fetchone()
@@ -359,17 +408,39 @@ async def update_category(
     new_interval = req.custom_interval_minutes if req.custom_interval_minutes is not None else row["custom_interval_minutes"]
     new_min_date = req.custom_min_date if req.custom_min_date is not None else row["custom_min_date"]
     new_force_min = (1 if req.force_min_date else 0) if req.force_min_date is not None else row["force_min_date"]
+    new_auto_full = (1 if req.auto_full_text else 0) if req.auto_full_text is not None else row["auto_full_text"]
+    if req.view_preferences is not None:
+        if isinstance(req.view_preferences, str):
+            new_view_prefs_str = req.view_preferences
+        else:
+            new_view_prefs_str = json.dumps(req.view_preferences, ensure_ascii=False)
+    else:
+        new_view_prefs_str = row["view_preferences"] or "{}"
 
     await conn.execute(
         """
         UPDATE categories
-        SET name = ?, sort_order = ?, custom_retention_days = ?, custom_interval_minutes = ?, custom_min_date = ?, force_min_date = ?
+        SET name = ?, sort_order = ?, custom_retention_days = ?, custom_interval_minutes = ?, custom_min_date = ?, force_min_date = ?, auto_full_text = ?, view_preferences = ?
         WHERE id = ? AND user_id = ?
         """,
-        (new_name, new_sort, new_ret, new_interval, new_min_date, new_force_min, category_id, user_id),
+        (new_name, new_sort, new_ret, new_interval, new_min_date, new_force_min, new_auto_full, new_view_prefs_str, category_id, user_id),
     )
 
-    # 若指定 is_paused，連動設定該分類下所有訂閱頻道的 is_paused
+    # 級聯連動：若指定 auto_full_text，同步連動該分類下所有訂閱頻道的 auto_full_text
+    if req.auto_full_text is not None:
+        target_auto_full = 1 if req.auto_full_text else 0
+        await conn.execute(
+            """
+            UPDATE feeds
+            SET auto_full_text = ?
+            WHERE id IN (
+                SELECT feed_id FROM user_feeds WHERE user_id = ? AND category_id = ?
+            )
+            """,
+            (target_auto_full, user_id, category_id),
+        )
+
+    # 級聯連動：若指定 is_paused，連動設定該分類下所有訂閱頻道的 is_paused
     if req.is_paused is not None:
         target_paused = 1 if req.is_paused else 0
         await conn.execute(
@@ -383,7 +454,7 @@ async def update_category(
             (target_paused, user_id, category_id),
         )
 
-    # 若指定 custom_interval_minutes 且大於 0，連動更新該分類下所有頻道的 check_interval_minutes
+    # 級聯連動：若指定 custom_interval_minutes 且大於 0，連動更新該分類下所有頻道的 check_interval_minutes
     if req.custom_interval_minutes is not None and req.custom_interval_minutes > 0:
         await conn.execute(
             """
@@ -398,6 +469,13 @@ async def update_category(
 
     await conn.commit()
 
+    view_prefs_obj = None
+    try:
+        view_prefs_obj = json.loads(new_view_prefs_str) if isinstance(new_view_prefs_str, str) else new_view_prefs_str
+    except Exception as exc:
+        logger.warning(f"Failed to parse updated category view_preferences (ID {category_id}): {exc}")
+        view_prefs_obj = None
+
     return CategoryDTO(
         id=category_id,
         name=new_name,
@@ -407,6 +485,8 @@ async def update_category(
         custom_interval_minutes=new_interval,
         custom_min_date=new_min_date,
         force_min_date=bool(new_force_min),
+        auto_full_text=bool(new_auto_full),
+        view_preferences=view_prefs_obj,
         is_paused=bool(req.is_paused) if req.is_paused is not None else False,
     )
 
@@ -522,7 +602,7 @@ async def subscribe_feed(
     if scheduler:
         asyncio.create_task(scheduler.trigger_refresh(feed_id=feed_id))
 
-    return {"feed_id": feed_id, "message": "Feed subscribed successfully"}
+    return {"feed_id": feed_id, "id": feed_id, "message": "Feed subscribed successfully"}
 
 
 @router.get("/feeds/{feed_id}", response_model=dict)
@@ -571,71 +651,186 @@ async def update_feed(
     user: dict = Depends(get_current_user),
     conn: aiosqlite.Connection = Depends(get_write_db),
 ) -> dict:
-    """修改個人訂閱頻道設定 (Update Subscribed Feed Settings)."""
+    """修改個人訂閱頻道設定 (Update Subscribed Feed Settings with Smart Collision Handling & Re-link)."""
     user_id = user["id"]
     cur = await conn.execute(
-        "SELECT feed_id FROM user_feeds WHERE user_id = ? AND feed_id = ?",
+        """
+        SELECT uf.feed_id, uf.category_id, uf.custom_title, uf.custom_retention_days,
+               f.feed_url, f.site_url, f.title
+        FROM user_feeds uf
+        JOIN feeds f ON uf.feed_id = f.id
+        WHERE uf.user_id = ? AND uf.feed_id = ?
+        """,
         (user_id, feed_id),
     )
-    if not await cur.fetchone():
+    user_feed_row = await cur.fetchone()
+    if not user_feed_row:
         raise HTTPException(status_code=404, detail="Subscribed feed not found")
 
-    if req.custom_title is not None or req.category_id is not None or req.custom_retention_days is not None:
+    target_feed_id = feed_id
+    new_url = req.feed_url.strip() if req.feed_url and req.feed_url.strip() else None
+    current_url = user_feed_row["feed_url"]
+    url_changed = False
+
+    # 1. 處理訂閱源網址變更與唯一性衝突 (Handle Feed URL Update & Collision)
+    if new_url and new_url != current_url:
+        url_changed = True
+        f_cur = await conn.execute(
+            "SELECT id, title, feed_url FROM feeds WHERE feed_url = ?",
+            (new_url,),
+        )
+        existing_feed = await f_cur.fetchone()
+
+        if existing_feed:
+            existing_feed_id = existing_feed["id"]
+            if existing_feed_id != feed_id:
+                # 檢查該使用者是否已在其他分類訂閱過目標 Feed
+                sub_cur = await conn.execute(
+                    "SELECT feed_id FROM user_feeds WHERE user_id = ? AND feed_id = ?",
+                    (user_id, existing_feed_id),
+                )
+                is_already_subscribed = await sub_cur.fetchone()
+
+                target_cat_id = req.category_id if "category_id" in req.model_fields_set else user_feed_row["category_id"]
+                target_title = req.custom_title if "custom_title" in req.model_fields_set else user_feed_row["custom_title"]
+                target_retention = req.custom_retention_days if "custom_retention_days" in req.model_fields_set else user_feed_row["custom_retention_days"]
+
+                # 移除當前舊頻道的個人訂閱關聯 (Remove obsolete/duplicate subscription)
+                await conn.execute(
+                    "DELETE FROM user_feeds WHERE user_id = ? AND feed_id = ?",
+                    (user_id, feed_id),
+                )
+
+                if is_already_subscribed:
+                    # 使用者在其他分類已訂閱過此頻道 -> 自動智慧合併並移至使用者當前所選分類
+                    merge_updates = []
+                    merge_params = []
+                    if "category_id" in req.model_fields_set:
+                        merge_updates.append("category_id = ?")
+                        merge_params.append(req.category_id)
+                    if "custom_title" in req.model_fields_set and req.custom_title:
+                        merge_updates.append("custom_title = ?")
+                        merge_params.append(req.custom_title)
+                    if "custom_retention_days" in req.model_fields_set:
+                        merge_updates.append("custom_retention_days = ?")
+                        merge_params.append(req.custom_retention_days)
+
+                    if merge_updates:
+                        merge_params.extend([user_id, existing_feed_id])
+                        await conn.execute(
+                            f"UPDATE user_feeds SET {', '.join(merge_updates)} WHERE user_id = ? AND feed_id = ?",
+                            tuple(merge_params),
+                        )
+                else:
+                    # 使用者尚未訂閱目標頻道 -> 建立新關聯
+                    await conn.execute(
+                        """
+                        INSERT INTO user_feeds (user_id, feed_id, category_id, custom_title, custom_retention_days)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (user_id, existing_feed_id, target_cat_id, target_title, target_retention),
+                    )
+
+                # 若舊頻道無其他使用者訂閱，自動回收孤立記錄
+                ref_cur = await conn.execute(
+                    "SELECT COUNT(*) as count FROM user_feeds WHERE feed_id = ?",
+                    (feed_id,),
+                )
+                ref_row = await ref_cur.fetchone()
+                if ref_row and ref_row["count"] == 0:
+                    await conn.execute("DELETE FROM feeds WHERE id = ?", (feed_id,))
+
+                target_feed_id = existing_feed_id
+        else:
+            # 新網址未曾存在於系統中，直接安全更新目前 feeds 記錄
+            try:
+                await conn.execute(
+                    """
+                    UPDATE feeds
+                    SET feed_url = ?, error_count = 0, last_error_message = NULL, next_check_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (new_url, feed_id),
+                )
+            except aiosqlite.IntegrityError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="該訂閱源網址已存在於系統中，無法更新",
+                )
+
+    # 2. 更新使用者自訂屬性 (User Custom Attributes - 支援切換至未分類 None 與精確欄位更新)
+    fields_set = req.model_fields_set
+    user_updates = []
+    user_params = []
+    if "custom_title" in fields_set:
+        user_updates.append("custom_title = ?")
+        user_params.append(req.custom_title)
+    if "category_id" in fields_set:
+        user_updates.append("category_id = ?")
+        user_params.append(req.category_id)
+    if "custom_retention_days" in fields_set:
+        user_updates.append("custom_retention_days = ?")
+        user_params.append(req.custom_retention_days)
+
+    if user_updates:
+        user_params.extend([user_id, target_feed_id])
         await conn.execute(
-            """
-            UPDATE user_feeds
-            SET custom_title = COALESCE(?, custom_title),
-                category_id = ?,
-                custom_retention_days = ?
-            WHERE user_id = ? AND feed_id = ?
-            """,
-            (req.custom_title, req.category_id, req.custom_retention_days, user_id, feed_id),
+            f"UPDATE user_feeds SET {', '.join(user_updates)} WHERE user_id = ? AND feed_id = ?",
+            tuple(user_params),
         )
 
-    if (
-        req.check_interval_minutes is not None
-        or req.is_paused is not None
-        or req.requires_flaresolverr is not None
-        or req.auto_full_text is not None
-        or req.feed_url is not None
-        or req.site_url is not None
-        or req.min_publish_date is not None
-        or req.force_min_date is not None
-        or req.auth_username is not None
-        or req.auth_password is not None
-    ):
+    # 3. 更新頻道基礎與抓取屬性 (Feed Level Fetch Attributes)
+    feed_updates = []
+    feed_params = []
+    if "check_interval_minutes" in fields_set and req.check_interval_minutes is not None:
+        feed_updates.append("check_interval_minutes = ?")
+        feed_params.append(req.check_interval_minutes)
+    if "is_paused" in fields_set and req.is_paused is not None:
+        feed_updates.append("is_paused = ?")
+        feed_params.append(1 if req.is_paused else 0)
+    if "requires_flaresolverr" in fields_set and req.requires_flaresolverr is not None:
+        feed_updates.append("requires_flaresolverr = ?")
+        feed_params.append(1 if req.requires_flaresolverr else 0)
+    if "auto_full_text" in fields_set and req.auto_full_text is not None:
+        feed_updates.append("auto_full_text = ?")
+        feed_params.append(1 if req.auto_full_text else 0)
+    if "site_url" in fields_set:
+        feed_updates.append("site_url = ?")
+        feed_params.append(req.site_url)
+    if "min_publish_date" in fields_set:
+        feed_updates.append("min_publish_date = ?")
+        feed_params.append(req.min_publish_date)
+    if "force_min_date" in fields_set and req.force_min_date is not None:
+        feed_updates.append("force_min_date = ?")
+        feed_params.append(1 if req.force_min_date else 0)
+    if "auth_username" in fields_set:
+        feed_updates.append("auth_username = ?")
+        feed_params.append(req.auth_username)
+    if "auth_password" in fields_set:
+        feed_updates.append("auth_password = ?")
+        feed_params.append(req.auth_password)
+
+    if feed_updates:
+        feed_params.append(target_feed_id)
         await conn.execute(
-            """
-            UPDATE feeds
-            SET check_interval_minutes = COALESCE(?, check_interval_minutes),
-                is_paused = COALESCE(?, is_paused),
-                requires_flaresolverr = COALESCE(?, requires_flaresolverr),
-                auto_full_text = COALESCE(?, auto_full_text),
-                feed_url = COALESCE(?, feed_url),
-                site_url = COALESCE(?, site_url),
-                min_publish_date = COALESCE(?, min_publish_date),
-                force_min_date = COALESCE(?, force_min_date),
-                auth_username = COALESCE(?, auth_username),
-                auth_password = COALESCE(?, auth_password)
-            WHERE id = ?
-            """,
-            (
-                req.check_interval_minutes,
-                (1 if req.is_paused else 0) if req.is_paused is not None else None,
-                (1 if req.requires_flaresolverr else 0) if req.requires_flaresolverr is not None else None,
-                (1 if req.auto_full_text else 0) if req.auto_full_text is not None else None,
-                req.feed_url,
-                req.site_url,
-                req.min_publish_date,
-                (1 if req.force_min_date else 0) if req.force_min_date is not None else None,
-                req.auth_username,
-                req.auth_password,
-                feed_id,
-            ),
+            f"UPDATE feeds SET {', '.join(feed_updates)} WHERE id = ?",
+            tuple(feed_params),
         )
 
     await conn.commit()
-    return {"message": "Feed settings updated successfully"}
+
+    # 若網址變更，立即觸發一次非同步抓取
+    if url_changed:
+        from omnirss.core.scheduler import get_global_scheduler
+        scheduler = get_global_scheduler()
+        if scheduler:
+            asyncio.create_task(scheduler.trigger_refresh(feed_id=target_feed_id))
+
+    return {
+        "feed_id": target_feed_id,
+        "id": target_feed_id,
+        "message": "Feed settings updated successfully",
+    }
 
 
 
@@ -667,32 +862,42 @@ async def refresh_feeds_pipeline(
     user: dict = Depends(get_current_user),
     conn: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    """手動強制立即更新所有或指定頻道/分類 (Force Manual Refresh via Scheduler Single-Writer Pipeline)."""
+    """手動強制立即更新所有或指定頻道/分類 (非同步背景任務，秒級回傳，前端由輪詢接收進度)."""
     feed_id = (req or {}).get("feed_id")
     category_id = (req or {}).get("category_id")
     from omnirss.core.scheduler import OmniScheduler, get_global_scheduler
 
     scheduler = get_global_scheduler()
     if not scheduler:
-        # Fallback 建立臨時實例執行
         scheduler = OmniScheduler()
 
-    refresh_result = await scheduler.trigger_refresh(feed_id=feed_id, category_id=category_id)
-    if isinstance(refresh_result, dict):
-        updated_count = int(refresh_result.get("refreshed_count", 0))
-        new_arts = int(refresh_result.get("new_articles", 0))
-        total_attempted = int(refresh_result.get("total_attempted", 0))
-    else:
-        updated_count = int(refresh_result or 0)
-        new_arts = 0
-        total_attempted = updated_count
+    # 若當前未在執行中，於背景非同步啟動抓取任務
+    if not scheduler.refresh_progress.get("is_running", False):
+        asyncio.create_task(scheduler.trigger_refresh(feed_id=feed_id, category_id=category_id))
 
     return {
-        "status": "success",
-        "message": f"成功完成即時重新整理，共更新 {updated_count} 個訂閱頻道 (新增 {new_arts} 篇文章)",
-        "updated_feeds": updated_count,
-        "new_articles": new_arts,
-        "total_attempted": total_attempted,
+        "status": "started",
+        "message": "已在背景啟動全域頻道即時更新",
+        "is_running": True,
+    }
+
+
+@router.post("/feeds/refresh/stop")
+async def stop_refresh_feeds_endpoint(
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """手動立即中斷並停止所有進行中的頻道抓取與更新 (Stop ongoing feed crawl and refresh immediately)."""
+    from omnirss.core.scheduler import OmniScheduler, get_global_scheduler
+
+    scheduler = get_global_scheduler()
+    if not scheduler:
+        scheduler = OmniScheduler()
+
+    cancelled_count = scheduler.cancel_refresh()
+    return {
+        "status": "stopped",
+        "message": f"已立即停止更新 (中斷 {cancelled_count} 個抓取任務)",
+        "cancelled_tasks": cancelled_count,
     }
 
 
@@ -702,26 +907,20 @@ async def refresh_single_feed_endpoint(
     user: dict = Depends(get_current_user),
     conn: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    """手動強制更新單一頻道 (Force Manual Refresh Single Feed via Pipeline)."""
+    """手動強制更新單一頻道 (非同步背景任務)."""
     from omnirss.core.scheduler import OmniScheduler, get_global_scheduler
 
     scheduler = get_global_scheduler()
     if not scheduler:
         scheduler = OmniScheduler()
 
-    refresh_result = await scheduler.trigger_refresh(feed_id=feed_id)
-    if isinstance(refresh_result, dict):
-        updated_count = int(refresh_result.get("refreshed_count", 0))
-        new_arts = int(refresh_result.get("new_articles", 0))
-    else:
-        updated_count = int(refresh_result or 0)
-        new_arts = 0
+    if not scheduler.refresh_progress.get("is_running", False):
+        asyncio.create_task(scheduler.trigger_refresh(feed_id=feed_id))
 
     return {
-        "status": "success",
-        "message": "單一頻道即時更新完畢",
-        "updated_feeds": updated_count,
-        "new_articles": new_arts,
+        "status": "started",
+        "message": "已在背景啟動單一頻道即時更新",
+        "is_running": True,
     }
 
 
@@ -731,26 +930,20 @@ async def refresh_category_feeds_endpoint(
     user: dict = Depends(get_current_user),
     conn: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
-    """手動強制更新單一分類下之所有頻道 (Force Manual Refresh Feeds Under Category via Pipeline)."""
+    """手動強制更新單一分類下之所有頻道 (非同步背景任務)."""
     from omnirss.core.scheduler import OmniScheduler, get_global_scheduler
 
     scheduler = get_global_scheduler()
     if not scheduler:
         scheduler = OmniScheduler()
 
-    refresh_result = await scheduler.trigger_refresh(category_id=category_id)
-    if isinstance(refresh_result, dict):
-        updated_count = int(refresh_result.get("refreshed_count", 0))
-        new_arts = int(refresh_result.get("new_articles", 0))
-    else:
-        updated_count = int(refresh_result or 0)
-        new_arts = 0
+    if not scheduler.refresh_progress.get("is_running", False):
+        asyncio.create_task(scheduler.trigger_refresh(category_id=category_id))
 
     return {
-        "status": "success",
-        "message": f"分類頻道即時更新完畢，共更新 {updated_count} 個訂閱頻道",
-        "updated_feeds": updated_count,
-        "new_articles": new_arts,
+        "status": "started",
+        "message": "已在背景啟動分類頻道即時更新",
+        "is_running": True,
     }
 
 

@@ -1,175 +1,143 @@
 # OmniRSS 🌐
 
-> **微核心 RSS 閱讀器、全文提取與外掛擴充平台**  
-> *A self-hosted, microkernel-based RSS reader with a pluggable architecture.*
+> **微核心 RSS 閱讀器、全文提取與熱插拔外掛平台**  
+> *A lightweight, self-hosted RSS reader with a pluggable microkernel architecture.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SQLite WAL](https://img.shields.io/badge/Storage-SQLite%20WAL-003B57.svg?logo=sqlite)](https://www.sqlite.org/)
-[![Tests](https://img.shields.io/badge/Tests-100%25%20Passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-81%20Passed-brightgreen.svg)](tests/)
 
 ---
 
-## 專案緣起與架構想法
+## 為什麼做 OmniRSS？
 
-OmniRSS 是為了長時間重度使用 RSS 的開發者所設計的自架閱讀器。核心想法很簡單：**把主程式做小，把擴充性留給外掛。**
+如果你長年使用桌面端 RSS 閱讀器（如 QuiteRSS），一定會發現多數現代 Web RSS 系統過於臃腫、文章列表行距太寬，或是缺乏對特定論壇與圖文網站的排版還原。
 
-主程式只負責排程抓取、資料庫儲存、資安防護與基礎介面；其他各類網站爬蟲、AI 摘要、介面排版或外部同步，全部透過 4 大外掛插槽擴充。
+OmniRSS 的核心哲學是 **「主程式做小，擴充性留給外掛」**：
+* **極簡核心**：主程式只管定時排程、資料庫讀寫、資安清洗與介面佈局，記憶體佔用小於 150 MB。
+* **外掛擴充**：各類網站爬蟲、正文提取、AI 摘要與外部同步，全由隨插即用的 4 大外掛插槽負責。
+
+---
+
+## 🚀 快速開始
+
+### 方式 A：Docker Compose 一鍵啟動（推薦）
+
+這是最簡單快速的運行方式，不需要手動配置 Python 環境：
+
+```bash
+# 1. 取得專案原始碼
+git clone https://github.com/your-username/OmniRSS.git
+cd OmniRSS
+
+# 2. 一鍵後台啟動
+docker compose up -d
+```
+
+啟動後，使用瀏覽器打開 **`http://localhost:8000`** 即可開始使用！
+
+---
+
+### 方式 B：本機 Python 環境啟動
+
+適用於開發者或希望直接在主機上執行的情境：
+
+```bash
+# 1. 建立並啟用虛擬環境
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# Linux / macOS:
+source .venv/bin/activate
+
+# 2. 安裝必要套件
+pip install -r requirements.txt
+
+# 3. 啟動伺服器
+uvicorn omnirss.main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+## ✨ 本版功能亮點 (v1.1.0)
+
+### 1. 經典 24px 緊湊桌面流介面
+* **高密度清單**：文章列表固定 24px 行高，標題單行不折行、超長自動省略號截斷，一眼瀏覽百篇新訊。
+* **純鍵盤極速流**：支援 `J` / `K` 上下巡航、`S` 星標收藏、`M` 標記已讀、`Space` 翻頁滾動。
+* **自選欄位 `[ ⊞ ]`**：點擊表頭自選顯示標題、頻道、發布時間、標籤等欄位，並支援即時點選排序。
+* **零前端打包**：原生 ES6 模組 + CSS Tokens，不需 Node.js 構建，瀏覽器直讀。
+
+### 2. 實測穩定三大增強外掛
+* **PTT Enhancer (`plugins/processors/ptt_enhancer/`)**：
+  * 自動修復內文與推文中的 Imgur 純文字圖片直連。
+  * 還原作者與看板超連結，長串推文支援一鍵摺疊展開。
+* **Yahoo Enhancer (`plugins/processors/yahoo_enhancer/`)**：
+  * 自動還原 `data-src` / `data-original` 延遲載入（Lazyload）高解析度原圖。
+  * 清除入口網站多餘推薦導流雜訊。
+* **Gemini AI Summary (`plugins/processors/gemini_summary/`)**：
+  * 動態探測可用模型清單，具備配額自動瀑布流降級機制。
+  * 自動提取繁體中文重點條列，生成之摘要快取於本地，重複開啟零 Token 消耗。
+
+### 3. 高韌性 304 條件爬蟲
+* **304 Not Modified 快取**：完整支援 HTTP ETag 與 Last-Modified 標頭，未更新的頻道絕不消耗多餘網路流量。
+* **三階指紋輪替**：遇到 403 阻擋自動切換 `Chrome 128 標頭 ➔ 自動升級 HTTPS ➔ QuiteRSS Qt 指紋`。
+* **Auto-Referer 防盜鏈**：自動補齊來源網站根網域 Referer，實測連通率達 80%。
+
+### 4. SQLite WAL 冷熱儲存底座
+* **熱資料表 (`articles_hot`)**：存放近 30~90 天文章中繼資料，搭配 Trigram FTS5 全文索引，支援中英文子字串精準搜尋。
+* **冷存庫 (`archives_cold`)**：加星標文章自動以 zstd 高壓縮比保存全文。
+* **圖片去重存檔 (`data/images/`)**：圖片自動轉為 WebP 格式並以 SHA-256 雜湊儲存，重複圖片只存一份。
+
+---
+
+## 📖 首次使用三步驟
+
+1. **設定管理員密碼**：第一次開啟網頁時，系統會引導建立第一組管理者帳號。
+2. **匯入現有訂閱**：在「設定 ➔ 備份與還原」中，一鍵匯入你從 Feedly、Inoreader 或 QuiteRSS 導出的標準 OPML 檔案。
+3. **管理外掛功能**：點擊上方工具列「外掛」，隨時可開關 PTT 還原、Yahoo 圖片修正或填入 Gemini API Key 啟用 AI 摘要。
+
+---
+
+## 🏗️ 系統架構簡覽
 
 ```mermaid
 graph TD
     subgraph Core["OmniRSS 微核心主程序"]
         Kernel["API 伺服器 (FastAPI)"]
-        Scheduler["排程器 (APScheduler)"]
+        Scheduler["非同步排程器 (APScheduler)"]
         DBEngine["SQLite WAL 儲存 (Trigram FTS5)"]
-        SlotEngine["前端 CSS Grid 佈局引擎"]
-        PluginMgr["外掛管理器 & 熔斷器"]
-        SecurityGate["Anti-SSRF 網關 & nh3 清洗器"]
+        SecurityGate["Anti-SSRF 網關 & nh3 清洗"]
+        PluginMgr["外掛管理器 & 自動熔斷器"]
         
         Kernel <--> PluginMgr
         Scheduler <--> PluginMgr
         DBEngine <--> Kernel
-        SlotEngine <--> Kernel
         SecurityGate <--> PluginMgr
     end
 
-    subgraph Slots["4 大外掛插槽"]
-        S1["① 來源插槽 (Source)<br>標準 RSS、客製網站爬蟲"]
-        S2["② 處理插槽 (Processor)<br>Gemini AI 摘要、SimHash 去重、簡繁轉換"]
-        S3["③ 版面插槽 (Layout)<br>QuiteRSS 24px 三欄、寬螢幕雙欄、雜誌流"]
-        S4["④ 動作插槽 (Action)<br>星標同步 Obsidian、推播 Telegram / LINE"]
+    subgraph Slots["4 大隨插即用外掛插槽"]
+        S1["① 來源槽 (Source)<br>標準 RSS、客製網站爬蟲"]
+        S2["② 處理槽 (Processor)<br>Gemini 摘要、PTT/Yahoo 增強、SimHash 去重"]
+        S3["③ 版面槽 (Layout)<br>QuiteRSS 24px 三欄、寬螢幕雙欄"]
+        S4["④ 動作槽 (Action)<br>星標連動、Webhooks"]
     end
 
     PluginMgr <-->|Slot 1| S1
     PluginMgr <-->|Slot 2| S2
-    SlotEngine <-->|Slot 3| S3
+    Kernel <-->|Slot 3| S3
     PluginMgr <-->|Slot 4| S4
 ```
 
 ---
 
-## 主要特點
+## 📚 技術與部署文件
 
-### 1. 網路與內容防護
-* **Anti-SSRF 網關**：發送請求前先解析實體 IP，封鎖內網網段與雲端元數據 IP（如 `169.254.169.254`），並透過 Socket Pinning 防止 DNS Rebinding。
-* **HTML 靜態清洗**：使用 `nh3` 移除文章內的 `<script>`、`<iframe>` 與 `on*` 事件，搭配 `script-src 'none'` CSP 標頭，防止惡意腳本在閱讀器內執行。
-* **外掛故障隔離**：外掛執行逾時強制限制在 1~45 秒內；若連續發生 5 次錯誤會自動熔斷暫停，避免拖垮主程式。
-
-### 2. SQLite 冷熱分離儲存
-* **熱資料庫 (`feeds_hot.db`)**：存放近 30~90 天文章中繼資料，單筆約 100 Bytes，搭配 Trigram FTS5 全文索引，支援中英文子字串搜尋。
-* **冷存庫 (`archive_cold.db`)**：星標收藏的文章使用 zstd 壓縮保存內文。
-* **圖片去重儲存 (`data/images/`)**：圖片自動轉為 WebP 格式並依 SHA-256 雜湊分片存放，避免同一張圖重複下載佔用空間。
-* **即時未讀計數**：使用 SQLite 觸發器維護未讀數量，切換分類目錄時不需額外跑 `COUNT(*)` 查詢。
-
-### 3. QuiteRSS 24px 緊湊操作介面
-* **單行不折行**：文章列表固定 24px 行高，標題過長自動以省略號截斷（`nowrap` + `ellipsis`）。
-* **鍵盤操作**：支援 `J`/`K` 移動、`S` 星標、`M` 標記已讀、`Space` 滾動換頁。
-* **動態欄位選單 `[ ⊞ ]`**：可自由勾選顯示標題、作者、時間、標籤等欄位，並支援點擊表頭排序。
-* **原生無構建依賴**：採用 ES6 模組與 CSS Grid 變數，不需要 Node.js 打包即可直接運行。
-
-### 4. 爬蟲防阻擋機制
-* **475 個訂閱源實測連通率 79.6% ~ 80.6%**（經 OCI 與本地網路驗證）。
-* **Auto-Referer 防盜鏈**：自動帶入來源根網域 Referer，解決部分論壇 403 阻擋。
-* **三階指紋輪替**：遇到連線異常時，依序切換 `Chrome 128 標頭 ➔ 自動升級 HTTPS ➔ QuiteRSS Qt 指紋`。
-* **304 條件請求**：支援 ETag 與 Last-Modified 快取，未更新的頻道不消耗多餘頻寬。
-
----
-
-## 目錄結構
-
-```text
-OmniRSS/
-├── locales/                    # 多國語系字典檔 (zh-TW, en-US)
-├── src/
-│   └── omnirss/                # 核心套件 (src-layout 模式)
-│       ├── sdk/                # 外掛開發 SDK (ArticleDTO, BasePlugin, Context)
-│       │   ├── models.py
-│       │   ├── base_plugin.py
-│       │   └── context.py
-│       ├── core/               # 核心引擎、儲存底座、資安網關、外掛管理器
-│       │   ├── crawler_engine.py   # 高韌性 304 爬蟲引擎與指紋輪替
-│       │   ├── database.py         # SQLite WAL 連線池、Trigram FTS5 與觸發器
-│       │   ├── rule_engine.py      # QuiteRSS 條件過濾與動作分發規則引擎
-│       │   ├── scheduler.py        # 非同步定時排程循環與並行限制
-│       │   ├── security.py         # Anti-SSRF 網關、Argon2id 認證與 nh3 清洗
-│       │   ├── backup_engine.py    # OPML 2.0 雙向階層備份與設定脫敏
-│       │   ├── plugin_manager.py   # 動態外掛載入、設定疊加與熔斷機制
-│       │   ├── circuit_breaker.py  # 5 次錯誤自動熔斷保護器
-│       │   ├── image_vault.py      # SHA-256 WebP 圖片去重儲存庫
-│       │   ├── i18n.py             # 後端多國語系翻譯器
-│       │   └── config.py           # 系統組態配置管理器
-│       ├── api/                # FastAPI 路由控制器與資料模型
-│       │   ├── dependencies.py     # JWT/金鑰鑑權、速率限制依賴
-│       │   ├── schemas.py          # Pydantic v2 DTO 介面規範
-│       │   └── routers/            # 領域子路由 (auth, feeds, articles, tags, rules, plugins...)
-│       ├── web/                # QuiteRSS 24px 前端介面 (原生 ES6 + CSS Tokens + PWA)
-│       │   ├── index.html
-│       │   ├── css/            # 模組化樣式 (tokens, layout, list, reader, modals, tree)
-│       │   └── js/             # 前端元件 (app, state, api_client, i18n, keybindings, components...)
-│       └── main.py             # FastAPI 應用入口與 Lifespan 管理
-├── plugins/                    # 官方與自訂外掛目錄
-│   ├── sources/                # 來源外掛 (generic_scraper, gomaji)
-│   ├── processors/             # 處理外掛 (gemini_summary, simhash_dedup)
-│   └── actions/                # 動作外掛
-├── extensions/                 # 瀏覽器隨附擴充套件
-│   └── chrome/                 # Chrome MV3 擴充套件 (Web Clipper 與邊緣中繼)
-├── layouts/                    # 前端 CSS Grid 插槽版型設定
-├── scripts/                    # 驗證與維運工具腳本
-├── tests/                      # 自動化單元測試套件 (pytest)
-├── docs/                       # 詳細架構規格書與技術手冊
-├── Caddyfile                   # Caddy 2 自動 HTTPS 反向代理設定
-├── Dockerfile                  # 容器映像檔構建檔
-├── docker-compose.yml          # Docker Compose 部署設定
-├── requirements.txt            # Python 依賴清單
-├── pytest.ini                  # 測試環境設定
-└── config.example.json         # 系統設定檔範本
-```
-
----
-
-## 快速開始
-
-### 1. 取得專案並建立虛擬環境
-```bash
-git clone https://github.com/YuShyam/OmniRSS.git
-cd OmniRSS
-
-# 建立並啟用 Python 虛擬環境
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-# Linux / macOS
-source .venv/bin/activate
-
-# 安裝依賴
-pip install -r requirements.txt
-```
-
-### 2. 執行單元測試
-```bash
-pytest -v tests/
-```
-
----
-
-## 相關文件
-
-* [系統架構規格書 (`docs/SPEC.md`)](docs/SPEC.md)
-* [開發里程碑進度表 (`docs/TODO.md`)](docs/TODO.md)
-* [資料庫結構與調優設計 (`docs/DATABASE_SCHEMA.md`)](docs/DATABASE_SCHEMA.md)
-* [外掛系統與 SDK 開發手冊 (`docs/PLUGIN_SPEC.md`)](docs/PLUGIN_SPEC.md)
-* [爬蟲引擎與反阻擋說明 (`docs/CRAWLER_ENGINE.md`)](docs/CRAWLER_ENGINE.md)
-* [API 介面規格書 (`docs/API_CONTRACT.md`)](docs/API_CONTRACT.md)
-* [OCI 部署手冊 (`docs/DEPLOYMENT_OCI.md`)](docs/DEPLOYMENT_OCI.md)
-* [Chrome MV3 擴充套件規格 (`docs/CHROME_EXTENSION_SPEC.md`)](docs/CHROME_EXTENSION_SPEC.md)
-
----
-
-## 參與貢獻
-
-歡迎提交 Issue 或 Pull Request。外掛開發細節請參考 [CONTRIBUTING.md](CONTRIBUTING.md)。
+* [伺服器與雲端部署手冊 (`docs/DEPLOYMENT.md`)](docs/DEPLOYMENT.md)：Linux VPS / 雲端主機 / 家用 NAS 容器化部署、Nginx 反向代理、SSL 憑證與防限流調優。
+* [外掛開發 SDK 指南 (`docs/PLUGIN_SPEC.md`)](docs/PLUGIN_SPEC.md)：如何用 30 行 Python 自行擴充網站爬蟲與處理器。
+* [系統架構技術白皮書 (`docs/SPEC.md`)](docs/SPEC.md)：資料庫分層、Anti-SSRF 網路網關與安全性設計。
+* [外掛開發貢獻指南 (`CONTRIBUTING.md`)](CONTRIBUTING.md)：參與專案與 Pull Request 規範。
 
 ---
 

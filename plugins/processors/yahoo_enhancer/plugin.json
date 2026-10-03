@@ -1,0 +1,78 @@
+{
+  "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
+  "id": "omnirss/yahoo-enhancer",
+  "name": {
+    "zh-TW": "Yahoo 新聞排版與廣告淨化增強器",
+    "en-US": "Yahoo News Article & Ad Cleaner"
+  },
+  "version": "1.0.0",
+  "slot_type": "processor",
+  "badge": {
+    "short_name": "Yahoo",
+    "icon": "🧹",
+    "color": "#a855f7"
+  },
+  "author": "OmniRSS Core Team",
+  "description": {
+    "zh-TW": "專為 Yahoo 新聞平台設計之文章淨化外掛：精準萃取 .caas-body 正文結構、自動移除廣告與延伸閱讀雜訊、還原高清原始圖片。",
+    "en-US": "Structured reading enhancer for Yahoo News: extracts .caas-body content, strips inline ads, and restores HD images."
+  },
+  "entry_point": "plugin:YahooEnhancerProcessorPlugin",
+  "minimum_omnirss_version": "1.0.0",
+  "dependencies": [
+    "lxml>=5.0.0"
+  ],
+  "permissions": [
+    "network_access:outbound",
+    "db_read:articles",
+    "db_write:archives_cold"
+  ],
+  "timeout_seconds": 15,
+  "match_patterns": [
+    "*://*.yahoo.com/*",
+    "*://yahoo.com/*"
+  ],
+  "default_config": {
+    "auto_apply": true,
+    "strip_inline_ads": true,
+    "strip_read_more": true,
+    "restore_hd_images": true
+  },
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "auto_apply": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "爬取入庫時自動套用 (Auto Apply on Feed Ingestion)",
+          "en-US": "Auto Apply on Feed Ingestion"
+        }
+      },
+      "strip_inline_ads": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "自動清除內嵌廣告區塊",
+          "en-US": "Strip Inline Ads"
+        }
+      },
+      "strip_read_more": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "自動過濾延伸閱讀與社群推薦連結",
+          "en-US": "Strip Read More & Social Promos"
+        }
+      },
+      "restore_hd_images": {
+        "type": "boolean",
+        "default": true,
+        "title": {
+          "zh-TW": "還原 data-src 高畫質圖片來源",
+          "en-US": "Restore High-Res Images from data-src"
+        }
+      }
+    }
+  }
+}

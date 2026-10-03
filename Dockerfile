@@ -38,8 +38,8 @@ ENV PATH=/root/.local/bin:$PATH
 # 建立預設工作目錄
 RUN mkdir -p /app/data /app/plugins /app/layouts /app/locales /app/logs
 
-# 複製專案代碼
-COPY omnirss /app/omnirss
+# 複製專案原始碼
+COPY src/omnirss /app/omnirss
 COPY layouts /app/layouts
 COPY locales /app/locales
 

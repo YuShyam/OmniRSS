@@ -9,10 +9,12 @@ from omnirss.api.routers.edge import router as edge_router
 from omnirss.api.routers.backup import router as backup_router
 from omnirss.api.routers.assets import router as assets_router
 from omnirss.api.routers.tags import router as tags_router
+from omnirss.api.routers.users import router as users_router
 
 __all__ = [
     "auth_router",
     "user_router",
+    "users_router",
     "feeds_router",
     "articles_router",
     "rules_router",

@@ -39,13 +39,11 @@ async def get_write_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 async def get_current_user(
     auth_header: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
     session_token: Optional[str] = Cookie(default=None, alias="session_token"),
-    conn: aiosqlite.Connection = Depends(get_db),
 ) -> dict:
     """解析並驗證當前登入用戶 (Resolve and authenticate current user via JWT).
 
     :param auth_header: Authorization: Bearer 標頭
     :param session_token: session_token Cookie
-    :param conn: 非同步資料庫連線
     :return: 使用者資料列字典
     :raises HTTPException: 401 認證失敗
     """
@@ -78,11 +76,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    cursor = await conn.execute(
-        "SELECT id, username, password_hash, is_admin, api_key, settings_json, created_at FROM users WHERE id = ?",
-        (user_id,),
-    )
-    user_row = await cursor.fetchone()
+    db_mgr = get_db_manager()
+    async with db_mgr.get_connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, username, password_hash, is_admin, api_key, settings_json, created_at FROM users WHERE id = ?",
+            (user_id,),
+        )
+        user_row = await cursor.fetchone()
+
     if not user_row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

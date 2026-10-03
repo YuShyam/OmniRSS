@@ -9,7 +9,7 @@ from omnirss.core.backup_engine import BackupEngine
 SAMPLE_OPML = """<?xml version="1.0" encoding="utf-8"?>
 <opml version="2.0">
   <head>
-    <title>My Subscriptions</title>
+    <title>Subscriptions</title>
   </head>
   <body>
     <outline text="科技資訊" title="科技資訊">

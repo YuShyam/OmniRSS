@@ -31,14 +31,14 @@ def test_circuit_breaker_timeout_clamping() -> None:
     """測試雙層防衛性逾時秒數鉗制 (Test timeout clamping boundary rules)."""
     cb = CircuitBreakerManager()
 
-    # 異常負數或零 ➔ 回退預設 15s
-    assert cb.clamp_timeout(-30) == 15
-    assert cb.clamp_timeout(0) == 15
-    assert cb.clamp_timeout(None) == 15
+    # 異常負數或零 ➔ 回退預設 30s
+    assert cb.clamp_timeout(-30) == 30
+    assert cb.clamp_timeout(0) == 30
+    assert cb.clamp_timeout(None) == 30
 
     # 正常範圍 ➔ 採用設定值
     assert cb.clamp_timeout(10) == 10
-    assert cb.clamp_timeout(30) == 30
+    assert cb.clamp_timeout(20) == 20
 
     # 超過全域天花板 (45s) ➔ 鉗制至 45s
     assert cb.clamp_timeout(120) == 45

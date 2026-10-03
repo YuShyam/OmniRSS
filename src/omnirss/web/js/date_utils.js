@@ -6,6 +6,7 @@
  */
 
 import { t } from "./i18n.js";
+import { store } from "./state.js";
 
 export function parseUtcDate(dateInput) {
   if (!dateInput || dateInput === "null" || dateInput === "undefined") return new Date();
@@ -13,6 +14,12 @@ export function parseUtcDate(dateInput) {
 
   let str = String(dateInput).trim();
   if (str === "null" || str === "undefined" || !str) return new Date();
+
+  // 若已有明確時區標示 (+08:00, Z 等)，直接解析
+  if (str.includes("Z") || str.includes("+") || (str.lastIndexOf("-") > 7 && str.includes("T"))) {
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? new Date(dateInput) : d;
+  }
 
   // 若為 SQLite 標準格式 "YYYY-MM-DD HH:MM:SS"（naive UTC），補齊 "T" 與 "Z"
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str)) {
@@ -43,19 +50,33 @@ export function formatSmartDate(dateInput, formatMode = "smart") {
       if (diffSec < 2592000) return t("date.days_ago", { n: Math.floor(diffSec / 86400) });
     }
 
-    // 智慧跨年格式 (Smart format)
+    const tzPreference = store.get("timezone") || "auto";
+    const options = { hour12: false };
+    if (tzPreference !== "auto" && tzPreference) {
+      options.timeZone = tzPreference;
+    }
+
+    const timePart = d.toLocaleTimeString([], { ...options, hour: "2-digit", minute: "2-digit" });
     const isToday = d.toDateString() === now.toDateString();
-    const timePart = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (isToday) {
+    if (isToday && tzPreference === "auto") {
       return timePart;
     }
+
+    const parts = new Intl.DateTimeFormat("en-US", {
+      ...options,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(d);
+
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+
     const isCurrentYear = d.getFullYear() === now.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
     if (isCurrentYear) {
-      return `${month}/${day} ${timePart}`;
+      return `${map.month}/${map.day} ${timePart}`;
     }
-    return `${d.getFullYear()}/${month}/${day} ${timePart}`;
+    return `${map.year}/${map.month}/${map.day} ${timePart}`;
   } catch (_) {
     return "";
   }

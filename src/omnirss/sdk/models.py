@@ -30,6 +30,9 @@ class ArticleDTO(BaseModel):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
+    id: Optional[int] = Field(
+        default=None, description="文章在資料庫之流水號 ID (Article hot DB ID)"
+    )
     guid: str = Field(
         default="", description="文章原始唯一識別碼 (Original unique GUID)"
     )
@@ -59,6 +62,9 @@ class ArticleDTO(BaseModel):
     ai_summary: Optional[str] = Field(
         default=None, description="AI 產出之條列摘要 (AI-generated summary)"
     )
+    applied_plugins: list[str] = Field(
+        default_factory=list, description="已套用此外掛 ID 清單 (Applied plugin IDs)"
+    )
     extra_tags: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("extra_tags", "custom_tags"),
@@ -68,6 +74,7 @@ class ArticleDTO(BaseModel):
     # 狀態標記 (State flags)
     is_starred: bool = Field(default=False, description="是否加星收藏 (Starred flag)")
     is_read: bool = Field(default=False, description="是否已讀 (Read flag)")
+    highlight_color: Optional[str] = Field(default=None, description="視覺底色高亮 Hex 或語意名稱 (Highlight color)")
 
     @property
     def custom_tags(self) -> list[str]:
@@ -126,11 +133,11 @@ class PluginManifest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(description="外掛唯一 ID，建議格式為 author/plugin_id (Unique plugin ID)")
-    name: str = Field(description="外掛人類可讀名稱 (Human-readable name)")
+    name: str | dict[str, str] = Field(description="外掛人類可讀名稱 (Human-readable name or localized dictionary)")
     version: str = Field(default="1.0.0", description="語意化版本號 (Semantic version)")
     slot_type: PluginType = Field(description="外掛插槽分類 (Plugin slot category)")
     author: str = Field(default="Community", description="外掛作者 (Plugin author)")
-    description: str = Field(default="", description="外掛功能簡述 (Description)")
+    description: str | dict[str, str] = Field(default="", description="外掛功能簡述 (Description or localized dictionary)")
     entry_point: str = Field(
         default="plugin:Plugin",
         description="模組載入進入點，格式為 module:ClassName (Entry point)",
@@ -152,4 +159,12 @@ class PluginManifest(BaseModel):
     )
     timeout_seconds: int = Field(
         default=15, description="單次執行逾時秒數 (Declared execution timeout)"
+    )
+    match_patterns: list[str] = Field(
+        default_factory=list,
+        description="聲明式網址比對樣式清單 (Declarative URL match patterns, e.g. *://*.ptt.cc/*)",
+    )
+    badge: dict[str, Any] | None = Field(
+        default=None,
+        description="外掛表徵元資料，由 UI 層動態讀取顯示（Plugin badge metadata for dynamic UI rendering）",
     )

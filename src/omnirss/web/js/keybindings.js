@@ -163,6 +163,14 @@ export function initKeybindings() {
 
     if (isInput) {
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (target.id === "global-search") {
+          target.value = "";
+          target.placeholder = t("nav.search_placeholder") || "搜尋文章 (/)";
+          store.set("searchQuery", "");
+          window.dispatchEvent(new CustomEvent("omnirss:clear-search"));
+        }
         target.blur();
       }
       return;
@@ -171,8 +179,34 @@ export function initKeybindings() {
     const openModal = document.querySelector(".modal-overlay.open");
     if (openModal) {
       if (e.key === "Escape") {
-        openModal.classList.remove("open");
         e.preventDefault();
+        e.stopPropagation();
+        openModal.classList.remove("open");
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      const searchInput = document.getElementById("global-search");
+      if (searchInput) {
+        searchInput.value = "";
+        searchInput.placeholder = t("nav.search_placeholder") || "搜尋文章 (/)";
+      }
+
+      const search = store.get("searchQuery");
+      const isValidSearch = Boolean(search && typeof search === "string" && search.trim() && search.trim() !== "null" && search.trim() !== "undefined");
+
+      if (isValidSearch) {
+        store.set("searchQuery", "");
+        window.dispatchEvent(new CustomEvent("omnirss:clear-search"));
+        return;
+      }
+      const filter = store.get("activeFilter");
+      if (filter && filter !== "all") {
+        window.dispatchEvent(new CustomEvent("omnirss:reset-filter-to-all"));
+        return;
       }
       return;
     }

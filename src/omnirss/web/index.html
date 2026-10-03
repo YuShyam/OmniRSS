@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OmniRSS - RSS 閱讀器</title>
   <meta name="description" content="Microkernel RSS reader with QuiteRSS compact UI, anti-SSRF gateway, and pluggable ecosystem." />
+  <meta name="referrer" content="no-referrer" />
+  <!-- Favicons & App Icons -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1.0.13" />
+  <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=1.0.13" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=1.0.13" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#16181f" />
 
@@ -14,12 +19,54 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="/css/tokens.css" />
-  <link rel="stylesheet" href="/css/layout.css" />
-  <link rel="stylesheet" href="/css/tree.css" />
-  <link rel="stylesheet" href="/css/list.css" />
-  <link rel="stylesheet" href="/css/reader.css" />
-  <link rel="stylesheet" href="/css/modals.css" />
+  <link rel="stylesheet" href="/css/tokens.css?v=1.0.32" />
+  <link rel="stylesheet" href="/css/layout.css?v=1.0.32" />
+  <link rel="stylesheet" href="/css/tree.css?v=1.0.32" />
+  <link rel="stylesheet" href="/css/list.css?v=1.0.32" />
+  <link rel="stylesheet" href="/css/reader.css?v=1.0.32" />
+  <link rel="stylesheet" href="/css/modals.css?v=1.0.32" />
+
+  <script>
+    function sanitizeSearch() {
+      var s = document.getElementById('global-search');
+      if (s) {
+        if (s.value === 'null' || s.value === 'undefined') s.value = '';
+        var ph = s.getAttribute('placeholder');
+        if (ph === 'null' || ph === 'undefined' || !ph) s.setAttribute('placeholder', '搜尋文章 (/)');
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', sanitizeSearch);
+    } else {
+      sanitizeSearch();
+    }
+    window.addEventListener('load', sanitizeSearch);
+    window.addEventListener('pageshow', sanitizeSearch);
+    setInterval(sanitizeSearch, 300);
+
+    function showGlobalErrorBanner(msg) {
+      console.error('[OmniRSS Global Error Intercepted]:', msg);
+      var banner = document.getElementById('global-error-banner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'global-error-banner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#b91c1c;color:#fff;padding:8px 16px;font-size:12px;font-family:sans-serif;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 10px rgba(0,0,0,0.4);';
+        banner.innerHTML = '<span style="font-weight:500;">⚠️ 前端腳本異常: ' + (msg || '未知錯誤') + ' (請按 Ctrl+F5 強制重新整理或開啟 F12 查看)</span><button onclick="this.parentElement.remove()" style="background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 6px;line-height:1;">&times;</button>';
+        if (document.body) {
+          document.body.appendChild(banner);
+        } else {
+          document.documentElement.appendChild(banner);
+        }
+      }
+    }
+    window.addEventListener('error', function(event) {
+      showGlobalErrorBanner(event.error ? (event.error.message || event.error) : event.message);
+    });
+    window.addEventListener('unhandledrejection', function(event) {
+      var reason = event.reason ? (event.reason.message || event.reason) : 'Promise 執行失敗';
+      console.warn('[OmniRSS Unhandled Promise Rejection]:', reason);
+    });
+  </script>
 </head>
 <body>
   <div id="app">
@@ -63,7 +110,7 @@
       <div class="header-center">
         <!-- Global Search Box -->
         <div class="search-box">
-          <input type="text" id="global-search" name="global_search_keyword" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-i18n-placeholder="nav.search_placeholder" placeholder="搜尋文章 (/)" />
+          <input type="text" id="global-search" name="omni_search_v3" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" value="" data-i18n-placeholder="nav.search_placeholder" placeholder="搜尋文章 (/)" />
           <span class="search-icon">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </span>
@@ -83,9 +130,16 @@
           <span data-i18n="nav.plugins">外掛管理</span>
         </button>
 
-        <!-- Settings (Includes Appearance, Reading, Backup & OPML, API Key) -->
+        <!-- Settings (Includes Appearance, Reading, Backup & OPML) -->
         <button class="icon-btn" id="btn-open-settings" data-i18n-title="nav.settings" title="系統設定">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+
+        <!-- User Account & Management -->
+        <button class="icon-btn user-nav-btn" id="btn-open-account" data-i18n-title="nav.account_title" title="帳號與使用者管理">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="nav-username-display">admin</span>
+          <span class="badge-role-admin" id="nav-admin-badge" style="display: none;">Admin</span>
         </button>
 
         <!-- Theme Toggle -->
@@ -132,12 +186,9 @@
         <div class="pane-list">
           <div class="list-container">
             <!-- Active Scope / Filter Pill Indicator Bar -->
-            <div class="active-filter-bar" id="active-filter-bar">
-              <span class="active-filter-pill" id="active-filter-pill">
-                <span id="active-filter-text" data-i18n="list.filter_feed_prefix">🔍 篩選：來源頻道</span>
-                <button type="button" class="btn-clear-filter" id="btn-clear-filter" data-i18n-title="list.clear_filter_title" title="清除篩選 (按 Esc)">✕</button>
-              </span>
-              <span style="color: var(--text-muted); font-size: 11px;" data-i18n="list.filter_clear_esc">按 Esc 返回全部</span>
+            <div class="active-filter-bar" id="active-filter-bar" style="display: none;">
+              <div class="active-filter-capsules" id="active-filter-capsules"></div>
+              <span id="active-filter-hint" style="color: var(--text-muted); font-size: 11px;" data-i18n="list.filter_clear_esc">按 Esc 返回全部</span>
             </div>
 
             <div class="list-header-row" id="list-header-container">
@@ -176,6 +227,9 @@
             <div class="progress-bar-fill" id="status-progress-bar-fill"></div>
           </div>
           <span class="progress-percent" id="status-progress-percent">0%</span>
+          <button type="button" class="btn-stop-refresh" id="btn-stop-refresh" title="立即停止更新" data-i18n-title="status.stop_refresh_title">
+            <span data-i18n="status.stop_refresh">⏹ 停止</span>
+          </button>
           <span class="progress-text" id="status-progress-msg" data-i18n="status.updating_feeds">正在更新頻道...</span>
         </span>
       </div>
@@ -397,6 +451,15 @@
               <div class="form-help" style="color: var(--text-muted, #9ca3af);" data-i18n="cat_props.pause_update_desc">勾選後暫停抓取此分類下的所有頻道，取消勾選即可恢復。</div>
             </div>
 
+            <!-- 分類自動擷取全文 -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 4px;">
+                <input type="checkbox" id="checkbox-cat-auto-full-text" style="accent-color: var(--accent-primary);" />
+                <span style="font-weight: 600;" data-i18n="cat_props.auto_full_text">⚡ 自動擷取完整內文 (含推文與圖片)</span>
+              </label>
+              <div class="form-help" data-i18n="cat_props.auto_full_text_desc">設定後將同步連動此分類下的所有頻道。</div>
+            </div>
+
             <div class="form-group" style="margin-top: 14px;">
               <label class="form-label" for="select-cat-interval" data-i18n="cat_props.interval">更新頻率</label>
               <select class="form-select" id="select-cat-interval">
@@ -462,87 +525,186 @@
     </div>
   </div>
 
-  <!-- Modal 3: Automated Filter Rules Dialog (QuiteRSS Logic Engine) -->
+  <!-- Modal 3: Automated Filter Rules Dialog (QuiteRSS Logic Engine v2) -->
   <div class="modal-overlay" id="modal-rules">
-    <div class="modal-box modal-lg" style="max-width: 860px; height: 640px;">
-      <div class="modal-header">
+    <div class="modal-box modal-lg" style="max-width: 920px; height: 720px; display: flex; flex-direction: column;">
+      <div class="modal-header" style="flex-shrink: 0;">
         <div class="modal-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          <span data-i18n="rules.title">過濾規則</span>
+          <span data-i18n="rules.title">過濾規則 (QuiteRSS 等級多條件引擎)</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-export-rules" style="font-size: 11px; padding: 4px 10px; font-weight: 600;" title="匯出所有自訂規則為 JSON 檔案">
+            📤 匯出
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-import-rules" style="font-size: 11px; padding: 4px 10px; font-weight: 600;" title="自 JSON 檔案匯入過濾規則">
+            📥 匯入
+          </button>
+          <input type="file" id="input-import-rules-file" accept=".json" style="display:none;" />
           <button type="button" class="btn btn-sm" id="btn-apply-all-rules" style="background: var(--accent-primary-dim); color: var(--accent-primary); border: 1px solid var(--accent-primary); font-size: 11px; padding: 4px 12px; font-weight: 600;" data-i18n="rules.apply_all_btn">
             ▶ 套用所有規則至現有文章
           </button>
           <button class="modal-close-btn">&times;</button>
         </div>
       </div>
-      <div class="modal-body" style="padding: 16px 20px;">
-        <form id="form-add-rule" style="background: var(--bg-surface); padding: 14px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 16px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid var(--border-color-subtle, rgba(255,255,255,0.06)); padding-bottom: 8px;">
-            <div style="font-weight: 700; font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <form id="form-add-rule" style="background: var(--bg-surface); padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-color-subtle, rgba(255,255,255,0.06)); padding-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
               <span data-i18n="rules.form_title">⚡ 規則設定</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <label class="form-label" style="margin-bottom: 0; font-size: 12px;" data-i18n="rules.match_mode_label">條件組合：</label>
-              <select class="form-select" id="select-rule-match-mode" style="width: 170px; height: 28px; font-size: 11px; padding: 2px 8px;">
-                <option value="all" selected data-i18n="rules.match_all">符合所有條件 (AND / 且)</option>
-                <option value="any" data-i18n="rules.match_any">符合任一條件 (OR / 或)</option>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-add-condition-group" style="font-size: 11px; padding: 3px 10px; font-weight: 600;">
+                ➕ 新增條件群組 (AND)
+              </button>
+            </div>
+          </div>
+
+          <!-- Top Row: Rule Name & Target Scope -->
+          <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div>
+              <label class="form-label" style="font-size: 11px; font-weight: 600;" data-i18n="rules.name_label">規則名稱 *</label>
+              <input type="text" class="form-input" id="input-rule-name" data-i18n-placeholder="rules.name_placeholder" placeholder="例如：特定新聞自動已讀、重要通知加星號" required style="min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px;" />
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 11px; font-weight: 600;" data-i18n="rules.scope_label">新聞源範圍 (Scope) *</label>
+              <select class="form-select" id="select-rule-scope-type" style="min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px;">
+                <option value="all" selected data-i18n="rules.scope_all">所有訂閱源 (全域)</option>
+                <option value="category" data-i18n="rules.scope_category">指定分類目錄</option>
+                <option value="feeds" data-i18n="rules.scope_feeds">指定來源頻道 (多選)</option>
               </select>
             </div>
           </div>
 
-          <!-- Top Row: Rule Name & Actions -->
-          <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px; margin-bottom: 12px;">
-            <div>
-              <label class="form-label" style="font-size: 11px;" data-i18n="rules.name_label">規則名稱 *</label>
-              <input type="text" class="form-input" id="input-rule-name" data-i18n-placeholder="rules.name_placeholder" placeholder="例如：PTT 徵女文自動已讀" required style="min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px;" />
+          <!-- Scope Targets (Category or Feeds selector) -->
+          <div id="rule-scope-category-box" style="display: none; margin-bottom: 12px;">
+            <label class="form-label" style="font-size: 11px;" data-i18n="rules.scope_category_target">選擇目標分類 *</label>
+            <select class="form-select" id="select-rule-scope-category" style="min-height: 36px; height: 36px; font-size: 12px;"></select>
+          </div>
+          <div id="rule-scope-feeds-box" style="display: none; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label class="form-label" style="font-size: 11px; margin-bottom: 0;" data-i18n="rules.scope_feeds_target">選擇目標頻道 (可多選) *</label>
+              <input type="text" class="form-input" id="input-rule-feed-filter" placeholder="🔍 快速過濾頻道 (例：科技、新聞)..." style="min-height: 26px; height: 26px; font-size: 11px; padding: 2px 8px; width: 190px;" />
             </div>
-            <div>
-              <label class="form-label" style="font-size: 11px;" data-i18n="rules.action_label">執行動作 *</label>
-              <select class="form-select" id="select-rule-action" style="min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px;">
-                <option value="mark_read" selected data-i18n="rules.action_mark_read">標記為已讀</option>
-                <option value="star" data-i18n="rules.action_star">加入星號收藏</option>
-                <option value="trash" data-i18n="rules.action_trash">移至垃圾桶 (已讀並隱藏)</option>
-                <option value="add_tag" data-i18n="rules.action_add_tag">🏷️ 附加指定標籤</option>
-                <option value="ai_summary" data-i18n="rules.action_ai_summary">優先觸發 AI 摘要</option>
-              </select>
+            <div id="rule-scope-feeds-list" style="max-height: 110px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; font-size: 12px;"></div>
+          </div>
+
+          <!-- Condition Groups Container (QuiteRSS Logic Blocks) -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+              <span data-i18n="rules.conditions_label">比對條件群組 (群組之間為 AND，內部可設定 OR 或 AND)</span>
             </div>
-            <div id="rule-tag-param-box" style="display: none;">
-              <label class="form-label" style="font-size: 11px;" data-i18n="rules.tag_label">指定標籤 *</label>
-              <div style="display: flex; gap: 4px;">
-                <select class="form-select" id="select-rule-tag-target" style="min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px; flex: 1;">
-                  <option value="重要" data-i18n="options.tag_important">重要 (紅色)</option>
-                  <option value="工作" data-i18n="options.tag_work">工作 (橘色)</option>
-                  <option value="個人" data-i18n="options.tag_personal">個人 (綠色)</option>
-                  <option value="待讀" data-i18n="options.tag_to_read">待讀 (藍色)</option>
-                  <option value="稍後閱讀" data-i18n="options.tag_read_later">稍後閱讀 (紫色)</option>
-                  <option value="__custom__" data-i18n="rules.custom_tag_option">➕ 自訂標籤名稱...</option>
-                </select>
-                <input type="text" class="form-input" id="input-rule-custom-tag" data-i18n-placeholder="rules.custom_tag_input_placeholder" placeholder="輸入標籤" style="display: none; min-height: 36px; height: 36px; line-height: 1.4; padding: 6px 10px; font-size: 13px; width: 100px;" />
+            <div id="rule-condition-groups-container" style="display: flex; flex-direction: column; gap: 10px;">
+              <!-- Dynamically populated with condition groups -->
+            </div>
+          </div>
+
+          <!-- Multi-Actions Pipeline (QuiteRSS Actions List) -->
+          <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color-subtle); border-radius: 6px; padding: 12px; margin-bottom: 14px;">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;" data-i18n="rules.actions_title">
+              ⚡ 命中時執行的動作清單 (可多選)
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; font-size: 12px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-mark-read" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_mark_read">標記為已讀</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-mark-unread" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_mark_unread">標記為未讀</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-star" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_star">加入星號收藏</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-unstar" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_unstar">取消星號收藏</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-trash" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_trash">移至垃圾桶 (已讀並隱藏)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-add-tag" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_add_tag_title">🏷️ 附加標籤</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-set-color" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_set_color_title">🎨 設定標題/行底色高亮</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-plugin" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.act_run_plugin">🤖 執行外掛處理</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="chk-act-stop" style="accent-color: var(--accent-primary);" />
+                <span data-i18n="rules.action_stop">⛔ 停止後續規則處理</span>
+              </label>
+            </div>
+
+            <!-- Plugin Action Selector Details -->
+            <div id="rule-action-plugin-details" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color-subtle);">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center;">
+                <div>
+                  <label class="form-label" style="font-size: 11px;" data-i18n="rules.plugin_select_label">選擇外掛：</label>
+                  <select class="form-select" id="select-rule-plugin-target" style="min-height: 32px; height: 32px; font-size: 12px; width: 100%;">
+                    <!-- 由 JS 動態填充已啟用的 processor 外掛選項，不寫死特定外掛 ID -->
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 11px;" data-i18n="rules.plugin_param_label">風格或參數：</label>
+                  <select class="form-select" id="select-rule-plugin-preset" style="min-height: 32px; height: 32px; font-size: 12px; width: 100%;">
+                    <option value="standard">標準重點條列 (預設)</option>
+                    <option value="tldr">極簡 TL;DR 結論</option>
+                    <option value="insights">產業與數據洞察</option>
+                    <option value="entertainment">影視與娛樂看點</option>
+                    <option value="roast">犀利幽默短評</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tag Selector Details -->
+            <div id="rule-action-tag-details" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color-subtle);">
+              <label class="form-label" style="font-size: 11px;" data-i18n="rules.tag_label">指定附加標籤名稱：</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select class="form-select" id="select-rule-tag-target" style="min-height: 32px; height: 32px; font-size: 12px; width: 180px;"></select>
+                <input type="text" class="form-input" id="input-rule-custom-tag" data-i18n-placeholder="rules.custom_tag_input_placeholder" placeholder="自訂新標籤名稱" style="display: none; min-height: 32px; height: 32px; font-size: 12px; width: 180px;" />
+              </div>
+            </div>
+
+            <!-- Color Palette & Custom Hex Color Details -->
+            <div id="rule-action-color-details" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color-subtle);">
+              <label class="form-label" style="font-size: 11px;" data-i18n="rules.color_label">選擇高亮底色 (支援 QuiteRSS 柔和色盤與自訂色碼)：</label>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div id="rule-color-swatches" style="display: flex; gap: 6px; align-items: center;">
+                  <button type="button" class="rule-color-swatch active" data-color="#ef4444" style="background:#ef4444; width:22px; height:22px; border-radius:50%; border:2px solid #fff; cursor:pointer;" title="紅色"></button>
+                  <button type="button" class="rule-color-swatch" data-color="#eab308" style="background:#eab308; width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer;" title="黃色"></button>
+                  <button type="button" class="rule-color-swatch" data-color="#22c55e" style="background:#22c55e; width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer;" title="綠色"></button>
+                  <button type="button" class="rule-color-swatch" data-color="#3b82f6" style="background:#3b82f6; width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer;" title="藍色"></button>
+                  <button type="button" class="rule-color-swatch" data-color="#a855f7" style="background:#a855f7; width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer;" title="紫色"></button>
+                  <button type="button" class="rule-color-swatch" data-color="#ec4899" style="background:#ec4899; width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer;" title="粉色"></button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <input type="color" id="rule-color-picker-input" value="#ef4444" style="width:30px; height:30px; padding:0; border:1px solid var(--border-color); border-radius:4px; cursor:pointer; background:none;" title="自訂選色器" />
+                  <input type="text" class="form-input" id="input-rule-color-hex" value="#ef4444" placeholder="#ef4444" style="width:90px; min-height:30px; height:30px; font-size:12px; font-family:monospace; padding:2px 6px;" />
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Dynamic Multi-Conditions Container -->
-          <div style="margin-bottom: 10px;">
-            <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-              <span data-i18n="rules.conditions_label">比對條件 (可設定來源頻道、標題、作者或內文關鍵字)</span>
-              <button type="button" class="btn btn-sm" id="btn-add-rule-condition" style="font-size: 11px; padding: 2px 8px; height: 24px;" data-i18n="rules.add_condition">
-                ➕ 新增條件
-              </button>
-            </div>
-            <div id="rule-conditions-rows" style="display: flex; flex-direction: column; gap: 8px;">
-              <!-- Populated dynamically with condition rows -->
-            </div>
-          </div>
+          <input type="hidden" id="input-rule-edit-id" value="" />
 
           <!-- Bottom Action Buttons -->
-          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border-color-subtle, rgba(255,255,255,0.06)); padding-top: 10px;">
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-color-subtle, rgba(255,255,255,0.06)); padding-top: 10px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-edit-rule" style="display: none; font-size: 12px; padding: 5px 14px;">
+              ✕ 取消編輯
+            </button>
             <button type="button" class="btn btn-secondary btn-sm" id="btn-test-current-rule" style="font-size: 12px; padding: 5px 14px;" data-i18n="rules.test_btn">
               🔍 測試比對
             </button>
-            <button type="submit" class="btn btn-primary btn-sm" style="font-size: 12px; padding: 5px 18px; font-weight: 600;" data-i18n="rules.save_btn">
+            <button type="submit" class="btn btn-primary btn-sm" id="btn-submit-rule" style="font-size: 12px; padding: 5px 18px; font-weight: 600;" data-i18n="rules.save_btn">
               💾 儲存規則
             </button>
           </div>
@@ -585,6 +747,61 @@
     </div>
   </div>
 
+  <!-- Modal 4.5: Dynamic Plugin Configuration Modal -->
+  <div class="modal-overlay" id="modal-plugin-config">
+    <div class="modal-box" style="width: 520px; max-width: 95vw;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span id="plugin-config-modal-title">外掛偏好設定</span>
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <form id="form-plugin-dynamic-config">
+        <div class="modal-body" style="padding: 16px 20px;" id="plugin-config-form-container">
+          <!-- Dynamically generated from config_schema -->
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-modal-cancel" id="btn-cancel-plugin-config" data-i18n="common.cancel">取消</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-plugin-config" data-i18n="common.save">儲存設定</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 4.6: Plugin Execution Logs Modal -->
+  <div class="modal-overlay" id="modal-plugin-logs">
+    <div class="modal-box modal-lg" style="width: 780px; max-width: 95vw;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span id="plugin-logs-modal-title">外掛執行歷史與活動日誌</span>
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="font-size: 12px; color: var(--text-muted);" id="plugin-logs-count-summary">載入中...</div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-refresh-plugin-logs" title="重新整理日誌">
+              🔄 重新整理
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" id="btn-clear-plugin-logs" title="清空所有歷史日誌">
+              🗑️ 清空日誌
+            </button>
+          </div>
+        </div>
+        <div class="plugin-logs-container" id="plugin-logs-container" style="max-height: 480px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-modal-cancel" id="btn-close-plugin-logs" data-i18n="common.close">關閉</button>
+      </div>
+    </div>
+  </div>
+
+
   <!-- Modal 5: Upgraded Tabbed Settings Center -->
   <div class="modal-overlay" id="modal-settings">
     <div class="modal-box">
@@ -604,13 +821,12 @@
         <button class="modal-tab-btn" data-tab="tab-shortcuts" data-i18n="settings.tab_shortcuts">⌨️ 快捷鍵</button>
         <button class="modal-tab-btn" data-tab="tab-schedule" data-i18n="settings.tab_schedule">⏱️ 排程與清理</button>
         <button class="modal-tab-btn" data-tab="tab-backup" data-i18n="settings.tab_backup">💾 備份與 OPML</button>
-        <button class="modal-tab-btn" data-tab="tab-api" data-i18n="settings.tab_api">🔑 API 金鑰</button>
       </nav>
 
       <div class="modal-body">
         <!-- Tab 1: Appearance & Multi-Section Typography -->
         <div class="modal-tab-content active" id="tab-appearance">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label" data-i18n="settings.theme">🎨 外觀主題</label>
               <select class="form-select" id="select-setting-theme">
@@ -626,6 +842,17 @@
                 <option value="jhenghei" data-i18n="settings.font_family_jhenghei">微軟正黑 / 蘋方</option>
                 <option value="serif" data-i18n="settings.font_family_serif">人文襯線宋體</option>
                 <option value="mono" data-i18n="settings.font_family_mono">等寬程式碼字體</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">🌐 全站時區 (Timezone)</label>
+              <select class="form-select" id="select-setting-timezone">
+                <option value="auto">系統預設 (跟隨瀏覽器)</option>
+                <option value="Asia/Taipei">UTC+8 (台北 / 北京 / 香港)</option>
+                <option value="Asia/Tokyo">UTC+9 (東京 / 首爾)</option>
+                <option value="UTC">UTC+0 (標準時間 / 倫敦)</option>
+                <option value="America/Los_Angeles">UTC-7 (美國西岸)</option>
+                <option value="America/New_York">UTC-4 (美國東岸)</option>
               </select>
             </div>
           </div>
@@ -747,11 +974,13 @@
           <div class="form-group">
             <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
               <input type="checkbox" id="checkbox-setting-auto-full-text" style="accent-color: var(--accent-primary);" />
-              <span data-i18n="settings.auto_full_text">點選文章時自動補齊全文 (若內容過短且未抓取全文)</span>
+              <span data-i18n="settings.auto_full_text">文章收錄時自動抓取全文 (展開完整排版、內文、留言與圖片)</span>
             </label>
-            <div class="form-help" data-i18n="settings.auto_full_text_help">點選閱讀文章時，若偵測到摘要過短（例如 Yahoo 新聞/PTT 來源），前端將自動發送請求補齊完整排版內文。</div>
+            <div class="form-help" data-i18n="settings.auto_full_text_help">開啟後，新收錄之文章將於背景非同步自動擷取完整內文並存入資料庫，點擊閱讀時零延遲秒開。</div>
           </div>
         </div>
+
+
 
         <!-- Tab: Tags Management (QuiteRSS Alignment) -->
         <div class="modal-tab-content" id="tab-tags">
@@ -869,19 +1098,13 @@
         <div class="modal-tab-content" id="tab-backup">
           <div class="form-group">
             <label class="form-label" data-i18n="settings.opml_title">OPML 訂閱清單匯出與匯入</label>
-            <div class="form-help" style="margin-bottom: 10px;" data-i18n="settings.opml_desc">支援 Feedly, Inoreader, QuiteRSS 等標準 OPML 格式。</div>
-            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-              <button type="button" class="btn btn-primary" id="btn-export-opml" data-i18n="settings.opml_export">匯出 OPML 檔案</button>
+            <div class="form-help" style="margin-bottom: 12px;" data-i18n="settings.opml_desc">支援 Feedly, Inoreader, QuiteRSS 等標準 OPML 格式。</div>
+            <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-primary" id="btn-export-opml" data-i18n="settings.opml_export">📤 匯出 OPML 檔案</button>
+              <button type="button" class="btn btn-secondary" id="btn-trigger-import-opml" data-i18n="settings.opml_import_btn">📥 匯入 OPML 檔案</button>
+              <input type="file" id="input-opml-file" accept=".opml,.xml" style="display: none;" />
             </div>
           </div>
-
-          <form id="form-import-opml" style="border-top: 1px solid var(--border-color-subtle); padding-top: 12px; margin-bottom: 12px;">
-            <div class="form-group">
-              <label class="form-label" data-i18n="settings.opml_import">選擇 OPML 檔案匯入</label>
-              <input type="file" id="input-opml-file" accept=".opml,.xml" class="form-input" required />
-            </div>
-            <button type="submit" class="btn btn-primary" data-i18n="settings.opml_start_import">開始匯入</button>
-          </form>
 
           <div class="danger-zone-box">
             <div class="danger-zone-title" data-i18n="settings.danger_zone">危險操作區</div>
@@ -889,23 +1112,10 @@
             <button type="button" class="btn btn-danger" id="btn-purge-database" data-i18n="settings.purge_btn">🔥 清空資料庫與所有快取</button>
           </div>
         </div>
-
-        <!-- Tab 5: API Key & Integration -->
-        <div class="modal-tab-content" id="tab-api">
-          <div class="form-group">
-            <label class="form-label" data-i18n="settings.api_key_label">RESTful API 金鑰 (API Key)</label>
-            <div class="input-btn-group" style="margin-bottom: 8px;">
-              <input type="text" class="form-input" id="input-api-key" readonly style="font-family: var(--font-mono); font-size: 12px; background: var(--bg-surface); cursor: pointer;" title="點擊全選複製" data-i18n-placeholder="settings.api_key_placeholder" placeholder="尚未產生金鑰" />
-              <button type="button" class="btn btn-secondary btn-nowrap" id="btn-copy-api-key" data-i18n="settings.copy_key_btn">📋 複製金鑰</button>
-              <button type="button" class="btn btn-secondary btn-nowrap" id="btn-regenerate-api-key" data-i18n="settings.regen_key">🔄 重新產生</button>
-            </div>
-            <div class="form-help" data-i18n="settings.api_key_help">用於第三方 App、腳本、瀏覽器外掛或自動化管線調用 OmniRSS API。若金鑰外洩可隨時重新產生。</div>
-          </div>
-        </div>
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn modal-cancel-btn" data-i18n="common.cancel">取消</button>
+        <button type="button" class="btn btn-modal-cancel" data-i18n="common.cancel">取消</button>
         <button type="button" class="btn btn-primary" id="btn-save-settings" data-i18n="common.save">儲存設定</button>
       </div>
     </div>
@@ -1038,8 +1248,9 @@
             <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
               <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
                 <input type="checkbox" id="feed-prop-auto-full-text" style="accent-color: var(--accent-primary);" />
-                <span data-i18n="feed_props.auto_full_text" style="font-weight: 600;">⚡ 自動抓取全文 (展開 PTT 鄉民推文與圖片)</span>
+                <span data-i18n="feed_props.auto_full_text" style="font-weight: 600;">⚡ 自動抓取全文 (展開完整網頁、討論留言與圖片)</span>
               </label>
+              <div class="form-help" style="margin-top: -4px; margin-left: 24px; font-size: 11px; color: var(--text-muted);">適用於只給標題或摘要的 RSS 源。開啟後系統於背景輪詢時會自動對文章原文發出請求抓取並補齊完整內文。</div>
               <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
                 <input type="checkbox" id="feed-prop-flaresolverr" style="accent-color: var(--accent-primary);" />
                 <span data-i18n="feed_props.flaresolverr_label">啟用 FlareSolverr 繞過 Cloudflare 驗證盾</span>
@@ -1142,8 +1353,204 @@
         </form>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button type="button" class="btn modal-cancel-btn" data-i18n="common.close">關閉</button>
+        <button type="button" class="btn btn-modal-cancel" data-i18n="common.close">關閉</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal 10: User Account & Management Dialog -->
+  <div class="modal-overlay" id="modal-account">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span data-i18n="account.title">個人帳號與使用者管理</span>
+        </div>
+        <button class="modal-close-btn">&times;</button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="modal-tabs-nav" id="account-modal-tabs">
+        <button type="button" class="modal-tab-btn active" data-tab="tab-account-security" data-i18n="account.tab_security">🔒 帳號安全</button>
+        <button type="button" class="modal-tab-btn" data-tab="tab-user-management" id="tab-btn-user-management" style="display: none;" data-i18n="account.tab_users">👥 使用者管理</button>
+        <button type="button" class="modal-tab-btn" data-tab="tab-system-logs" id="tab-btn-system-logs" style="display: none;">📋 系統日誌</button>
+      </nav>
+
+      <div class="modal-body" style="padding: 16px 20px;">
+        <!-- Tab 1: Account Security & Profile -->
+        <div class="modal-tab-content active" id="tab-account-security">
+          <!-- Profile Banner Card -->
+          <div class="account-section-card account-profile-box">
+            <div class="account-profile-main">
+              <div class="account-avatar-large">
+                <span id="account-avatar-initial">U</span>
+              </div>
+              <div class="account-user-meta">
+                <div class="account-name-row">
+                  <span id="account-current-username">username</span>
+                  <span class="badge-role-pill admin" id="account-current-role-badge">Admin</span>
+                </div>
+                <div class="account-meta-sub" id="account-created-at-display">
+                  -
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section: Change Password -->
+          <form id="form-change-password" class="account-section-card">
+            <div class="account-section-header">
+              <div class="account-section-title">
+                <span data-i18n="account.change_pwd_title">🔑 變更登入密碼</span>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+              <div>
+                <label class="form-label" style="font-size: 11px;" data-i18n="account.current_pwd">目前舊密碼 *</label>
+                <input type="password" class="form-input" id="input-account-old-pwd" required data-i18n-placeholder="account.current_pwd_placeholder" placeholder="輸入舊密碼" autocomplete="current-password" />
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 11px;" data-i18n="account.new_pwd">設定新密碼 *</label>
+                <input type="password" class="form-input" id="input-account-new-pwd" minlength="6" required data-i18n-placeholder="account.new_pwd_placeholder" placeholder="至少 6 位元" autocomplete="new-password" />
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 11px;" data-i18n="account.confirm_new_pwd">確認新密碼 *</label>
+                <input type="password" class="form-input" id="input-account-confirm-pwd" minlength="6" required data-i18n-placeholder="account.confirm_new_pwd_placeholder" placeholder="再次輸入新密碼" autocomplete="new-password" />
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end;">
+              <button type="submit" class="btn btn-primary btn-sm" id="btn-submit-change-pwd" data-i18n="account.submit_change_pwd">變更密碼</button>
+            </div>
+          </form>
+
+          <!-- Section: Personal API Key & Clipper Token -->
+          <div class="account-section-card">
+            <div class="account-section-header">
+              <div class="account-section-title">
+                <span data-i18n="account.api_key_section_title">🌐 個人 RESTful API 金鑰與剪藏 Token</span>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 6px;">
+              <div class="input-btn-group">
+                <input type="text" class="form-input" id="input-account-api-key" readonly style="font-family: var(--font-mono); font-size: 12px; background: var(--bg-surface-elevated, rgba(255,255,255,0.03)); cursor: pointer;" title="點擊全選複製" data-i18n-placeholder="settings.api_key_placeholder" placeholder="尚未產生金鑰" />
+                <button type="button" class="btn btn-secondary btn-nowrap" id="btn-account-copy-api-key" data-i18n="settings.copy_key_btn">📋 複製金鑰</button>
+                <button type="button" class="btn btn-secondary btn-nowrap" id="btn-account-regen-api-key" data-i18n="settings.regen_key">🔄 重新產生</button>
+              </div>
+              <div class="form-help" data-i18n="account.api_key_help">可用於第三方 App、自製 Python/GAS 自動化腳本或瀏覽器外掛調用 OmniRSS API。重新產生後舊金鑰將立即失效。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Admin User Management (Visible for Admin Only) -->
+        <div class="modal-tab-content" id="tab-user-management">
+          <!-- Top bar: Add User Form -->
+          <form id="form-admin-create-user" class="account-section-card" style="padding: 12px 16px; margin-bottom: 14px;">
+            <div class="account-section-title" style="margin-bottom: 10px;" data-i18n="users.create_title">➕ 新增使用者帳號</div>
+            <div class="create-user-grid">
+              <div>
+                <label class="form-label" data-i18n="users.username_label">使用者名稱 *</label>
+                <input type="text" class="form-input" id="input-admin-new-username" required data-i18n-placeholder="users.username_placeholder" placeholder="帳號名稱 (例如: john)" />
+              </div>
+              <div>
+                <label class="form-label" data-i18n="users.password_label">初始密碼 *</label>
+                <input type="password" class="form-input" id="input-admin-new-password" minlength="6" required data-i18n-placeholder="users.password_placeholder" placeholder="至少 6 位元" />
+              </div>
+              <div>
+                <label class="form-label" data-i18n="users.role_label">系統角色</label>
+                <select class="form-select" id="select-admin-new-role">
+                  <option value="user" selected data-i18n="users.role_user">一般使用者 (User)</option>
+                  <option value="admin" data-i18n="users.role_admin">系統管理員 (Admin)</option>
+                </select>
+              </div>
+              <div>
+                <button type="submit" class="btn btn-primary btn-create-submit" data-i18n="users.create_btn">建立帳號</button>
+              </div>
+            </div>
+          </form>
+
+          <!-- User List Table -->
+          <div class="users-table-header-bar">
+            <div class="users-table-title">
+              <span data-i18n="users.list_title">全站使用者名冊</span>
+              <span id="users-count-badge" class="badge-role-pill user" style="display: none; font-size: 10px; padding: 1px 6px;"></span>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary btn-user-action" id="btn-refresh-users-list">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span data-i18n="common.refresh">重新整理</span>
+            </button>
+          </div>
+          <div class="users-table-container">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th style="width: 26%;" data-i18n="users.col_user">使用者</th>
+                  <th style="width: 18%; text-align: center;" data-i18n="users.col_role">權限角色</th>
+                  <th style="width: 16%; text-align: center;" data-i18n="users.col_stats">訂閱數 / 未讀</th>
+                  <th style="width: 16%; text-align: center;" data-i18n="users.col_created">註冊時間</th>
+                  <th style="width: 24%; text-align: right;" data-i18n="users.col_actions">操作</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 3: Admin System & Security Logs (Visible for Admin Only) -->
+        <div class="modal-tab-content" id="tab-system-logs">
+          <div class="account-section-card" style="padding: 12px 16px; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div class="account-section-title">📋 系統與安全紀錄</div>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-sm btn-secondary btn-log-filter active" data-filter="all">全部紀錄</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-log-filter" data-filter="security">登入與安全</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-log-filter" data-filter="error">異常警告</button>
+                <button type="button" class="btn btn-sm btn-primary" id="btn-refresh-system-logs">重新整理</button>
+              </div>
+            </div>
+            <div id="system-logs-container" style="max-height: 380px; overflow-y: auto; background: var(--bg-surface-elevated, #0d1117); border: 1px solid var(--border-color, #30363d); border-radius: 6px; padding: 10px; font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.6; color: var(--text-primary, #c9d1d9);">
+              <div style="color: var(--text-muted); text-align: center; padding: 20px;">載入日誌中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-modal-cancel" data-i18n="common.close">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 11: User Login Dialog -->
+  <div class="modal-overlay" id="modal-login">
+    <div class="modal-box" style="max-width: 380px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          <span data-i18n="auth.login_title">登入 OmniRSS</span>
+        </div>
+      </div>
+      <form id="form-login">
+        <div class="modal-body" style="padding: 20px;">
+          <div id="login-error" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: 12px; color: #ef4444;"></div>
+          
+          <div style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 12px; margin-bottom: 6px;" data-i18n="auth.username">使用者名稱 *</label>
+            <input type="text" class="form-input" id="login-username" required autocomplete="username" data-i18n-placeholder="auth.username_placeholder" placeholder="請輸入使用者名稱" style="height: 34px; font-size: 13px;" />
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label class="form-label" style="font-size: 12px; margin-bottom: 6px;" data-i18n="auth.password">密碼 *</label>
+            <input type="password" class="form-input" id="login-password" required autocomplete="current-password" data-i18n-placeholder="auth.password_placeholder" placeholder="請輸入密碼" style="height: 34px; font-size: 13px;" />
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 20px;">
+          <div style="display: flex; justify-content: flex-end; width: 100%;">
+            <button type="submit" class="btn btn-primary" id="btn-submit-login" style="padding: 6px 18px; font-weight: 600;" data-i18n="auth.login_btn">登入</button>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1151,6 +1558,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- App Bootstrap Module -->
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="/js/app.js?v=1.0.32"></script>
 </body>
 </html>

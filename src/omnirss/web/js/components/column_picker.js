@@ -37,6 +37,7 @@ export class ColumnPicker {
         const currentCols = { ...store.get("columns") };
         currentCols[colKey] = e.target.checked;
         store.set("columns", currentCols);
+        window.dispatchEvent(new CustomEvent("omnirss:columns-changed"));
       }
     });
 
@@ -44,8 +45,9 @@ export class ColumnPicker {
       const resetOrderBtn = e.target.closest("#btn-reset-column-order");
       if (resetOrderBtn) {
         e.stopPropagation();
-        const defaultOrder = ["status", "star", "title", "actions", "feed", "date", "author", "tags"];
+        const defaultOrder = ["status", "star", "title", "feed", "date", "author", "tags"];
         store.set("columnOrder", defaultOrder);
+        window.dispatchEvent(new CustomEvent("omnirss:column-order-changed"));
         window.dispatchEvent(
           new CustomEvent("omnirss:toast", {
             detail: { message: t("columns.reset_order_success"), type: "success" },
@@ -59,7 +61,6 @@ export class ColumnPicker {
       if (resetWidthsBtn) {
         e.stopPropagation();
         store.set("columnWidths", {});
-        localStorage.removeItem("omnirss_column_widths");
         window.dispatchEvent(new CustomEvent("omnirss:column-widths-changed"));
         window.dispatchEvent(
           new CustomEvent("omnirss:toast", {

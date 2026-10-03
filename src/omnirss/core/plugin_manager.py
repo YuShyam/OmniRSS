@@ -11,6 +11,7 @@ import sys
 from typing import Any, Optional, Union
 from loguru import logger
 from omnirss.core.circuit_breaker import get_circuit_breaker
+from omnirss.core.pattern_matcher import match_url_patterns
 from omnirss.sdk.base_plugin import (
     BaseActionPlugin,
     BasePlugin,
@@ -34,14 +35,14 @@ class PluginManager:
 
     def __init__(self, plugins_dir: Optional[str | Path] = None) -> None:
         if plugins_dir is None:
-            self.plugins_dir = (
-                Path(__file__).resolve().parents[3] / "plugins"
-            )
+            from omnirss.core.config import get_base_dir
+            self.plugins_dir = get_base_dir() / "plugins"
         else:
             self.plugins_dir = Path(plugins_dir)
 
         self._plugins: dict[str, BasePlugin] = {}
         self._manifests: dict[str, PluginManifest] = {}
+        self._plugin_dirs: dict[str, Path] = {}
         self._global_configs: dict[str, dict[str, Any]] = {}
         self._user_configs: dict[tuple[int, str], dict[str, Any]] = {}
 
@@ -52,12 +53,29 @@ class PluginManager:
 
     @property
     def loaded_manifests(self) -> dict[str, PluginManifest]:
-        """已成功載入之資訊清單字典 (Dictionary of loaded manifests)."""
+        """已成功載入之資訊清單字典 (Dictionary of loaded manifests with hot reload)."""
+        for p_id in list(self._manifests.keys()):
+            self.get_manifest(p_id)
         return self._manifests
 
     def list_manifests(self) -> dict[str, PluginManifest]:
         """列出所有已載入之外掛資訊清單 (List loaded plugin manifests)."""
-        return self._manifests
+        return self.loaded_manifests
+
+    def get_manifest(self, plugin_id: str) -> Optional[PluginManifest]:
+        """取得並自動熱同步磁碟上最新之 PluginManifest (Get and auto-refresh manifest)."""
+        if plugin_id in self._plugin_dirs:
+            manifest_path = self._plugin_dirs[plugin_id] / "plugin.json"
+            if manifest_path.is_file():
+                try:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    latest_manifest = PluginManifest.model_validate(data)
+                    self._manifests[plugin_id] = latest_manifest
+                    return latest_manifest
+                except Exception:
+                    pass
+        return self._manifests.get(plugin_id)
 
     def set_global_config(self, plugin_id: str, config: dict[str, Any]) -> None:
         """設定全域外掛偏好設定 (Set global plugin config).
@@ -81,27 +99,80 @@ class PluginManager:
     def get_effective_config(
         self, plugin_id: str, user_id: Optional[int] = None
     ) -> dict[str, Any]:
-        """計算三層外掛設定覆蓋結果 (Compute 3-tier merged effective configuration).
+        """計算三層外掛設定覆蓋結果 (Compute 3-tier merged effective configuration with SQLite & Fallback).
 
-        Formula: ManifestDefault ⊕ GlobalConfig ⊕ UserConfig
+        Formula: ManifestDefault ⊕ GlobalConfig ⊕ UserConfig ⊕ SQLiteSync ⊕ EnvFallback
 
         :param plugin_id: 外掛識別碼
         :param user_id: 使用者 ID (若有)
         :return: 最終生效之設定字典
         """
-        manifest = self._manifests.get(plugin_id)
-        default_cfg = manifest.default_config if manifest else {}
-        global_cfg = self._global_configs.get(plugin_id, {})
+        import os
+        import sqlite3
+        from omnirss.core.config import get_settings
+
+        manifest = self.get_manifest(plugin_id) or self._manifests.get(plugin_id)
+        default_cfg = dict(manifest.default_config) if manifest and manifest.default_config else {}
+        global_cfg = dict(self._global_configs.get(plugin_id, {}))
         user_cfg = (
-            self._user_configs.get((user_id, plugin_id), {})
+            dict(self._user_configs.get((user_id, plugin_id), {}))
             if user_id is not None
             else {}
         )
+
+        # 若記憶體中無設定，自 SQLite 資料庫自動同步 (通用條件，不寫死特定外掛 ID)
+        if not user_cfg or not global_cfg:
+            try:
+                settings = get_settings()
+                db_path = Path(settings.database.path)
+                if db_path.exists() and db_path.is_file():
+                    with sqlite3.connect(str(db_path), timeout=0.2) as conn:
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
+
+                        # 1. 讀取全域設定
+                        if not global_cfg:
+                            cursor.execute("SELECT config_json FROM plugin_configs_global WHERE plugin_id = ?", (plugin_id,))
+                            g_row = cursor.fetchone()
+                            if g_row and g_row["config_json"]:
+                                global_cfg = json.loads(g_row["config_json"])
+                                self._global_configs[plugin_id] = global_cfg
+
+                        # 2. 讀取指定用戶設定
+                        if user_id is not None and not user_cfg:
+                            cursor.execute("SELECT config_json FROM user_plugin_configs WHERE user_id = ? AND plugin_id = ?", (user_id, plugin_id))
+                            u_row = cursor.fetchone()
+                            if u_row and u_row["config_json"]:
+                                user_cfg = json.loads(u_row["config_json"])
+                                self._user_configs[(user_id, plugin_id)] = user_cfg
+
+                        # 3. 智慧保底：若特定金鑰依然為空，查訪系統中既有已設定之有效偏好（避免排程或切換帳號脫節）
+                        if not user_cfg.get("api_key") and not global_cfg.get("api_key"):
+                            cursor.execute("SELECT config_json FROM user_plugin_configs WHERE plugin_id = ? ORDER BY user_id ASC LIMIT 1", (plugin_id,))
+                            any_row = cursor.fetchone()
+                            if any_row and any_row["config_json"]:
+                                fallback_cfg = json.loads(any_row["config_json"])
+                                if fallback_cfg.get("api_key"):
+                                    if not user_cfg:
+                                        user_cfg = fallback_cfg
+                                    else:
+                                        user_cfg.setdefault("api_key", fallback_cfg["api_key"])
+            except Exception as exc:
+                logger.debug(f"SQLite config sync notice for {plugin_id}: {exc}")
 
         merged = {}
         merged.update(default_cfg)
         merged.update(global_cfg)
         merged.update(user_cfg)
+
+        # 4. 環境變數保底：若外掛 manifest 宣告需要 api_key 欄位且目前尚未設定，則嘗試從環境變數補齊
+        # 此邏輯為通用設計，任何宣告了 api_key 欄位的外掛皆受惠，不再寫死特定外掛 ID
+        schema_props = (manifest.config_schema or {}).get("properties", {}) if manifest else {}
+        if "api_key" in schema_props and not merged.get("api_key"):
+            env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or os.environ.get("PLUGIN_API_KEY")
+            if env_key:
+                merged["api_key"] = env_key
+
         return merged
 
     def load_plugin_from_dir(self, plugin_dir: Path) -> Optional[BasePlugin]:
@@ -186,6 +257,7 @@ class PluginManager:
 
         self._plugins[plugin_id] = instance
         self._manifests[plugin_id] = manifest
+        self._plugin_dirs[plugin_id] = plugin_dir
         logger.info(
             f"Successfully loaded plugin: [{manifest.slot_type.value}] {plugin_id} v{manifest.version}"
         )
@@ -236,7 +308,15 @@ class PluginManager:
                 f"Plugin '{plugin_id}' is not an active BaseSourcePlugin"
             )
 
-        manifest = self._manifests[plugin_id]
+        manifest = self.get_manifest(plugin_id) or self._manifests[plugin_id]
+        if manifest.match_patterns and not match_url_patterns(
+            feed_url, manifest.match_patterns
+        ):
+            logger.warning(
+                f"Feed URL '{feed_url}' skipped source plugin '{plugin_id}' (match_patterns mismatch)"
+            )
+            return []
+
         effective_config = self.get_effective_config(plugin_id, user_id)
         plugin.update_config(effective_config)
 
@@ -252,6 +332,9 @@ class PluginManager:
             plugin_id=plugin_id,
             coro_fn=lambda: plugin.fetch(feed_url, context),
             declared_timeout=manifest.timeout_seconds,
+            user_id=user_id,
+            trigger_source="feed_crawl",
+            action_param=feed_url,
         )
 
     async def execute_processor(
@@ -260,6 +343,10 @@ class PluginManager:
         article: ArticleDTO,
         user_id: Optional[int] = None,
         http_client: Optional[Any] = None,
+        extra_config: Optional[dict[str, Any]] = None,
+        action_param: Optional[str] = None,
+        trigger_source: str = "manual",
+        article_id: Optional[int] = None,
     ) -> Optional[ArticleDTO]:
         """執行處理外掛加工文章 (Execute processor plugin under supervision).
 
@@ -267,6 +354,10 @@ class PluginManager:
         :param article: 待處理文章
         :param user_id: 觸發用戶 ID
         :param http_client: 注入之安全 HTTP 客戶端
+        :param extra_config: 動態覆蓋或補充之執行期參數 (例如指定 prompt_preset)
+        :param action_param: 規則或動作調用時傳入之通用參數
+        :param trigger_source: 觸發來源 ('manual', 'rule', 'star')
+        :param article_id: 指定文章流水號 ID (預設由 article 物件自動取得)
         :return: 處理後之 ArticleDTO (若為 None 則拋棄)
         """
         plugin = self._plugins.get(plugin_id)
@@ -275,8 +366,18 @@ class PluginManager:
                 f"Plugin '{plugin_id}' is not an active BaseProcessorPlugin"
             )
 
-        manifest = self._manifests[plugin_id]
-        effective_config = self.get_effective_config(plugin_id, user_id)
+        manifest = self.get_manifest(plugin_id) or self._manifests[plugin_id]
+        # 聲明式網址模式比對檢查 (Declarative match_patterns pre-filter)
+        if manifest.match_patterns and not match_url_patterns(
+            getattr(article, "url", ""), manifest.match_patterns
+        ):
+            logger.debug(
+                f"Article URL '{getattr(article, 'url', '')}' skipped processor plugin '{plugin_id}' (match_patterns mismatch)"
+            )
+            return article
+        effective_config = dict(self.get_effective_config(plugin_id, user_id))
+        if extra_config:
+            effective_config.update(extra_config)
         plugin.update_config(effective_config)
 
         context = PluginContext(
@@ -284,6 +385,7 @@ class PluginManager:
             config=effective_config,
             user_id=user_id,
             http_client=http_client,
+            action_param=action_param,
         )
 
         cb = get_circuit_breaker()
@@ -291,21 +393,78 @@ class PluginManager:
             plugin_id=plugin_id,
             coro_fn=lambda: plugin.process(article, context),
             declared_timeout=manifest.timeout_seconds,
+            user_id=user_id,
+            article_id=article_id or getattr(article, "id", None),
+            article_title=getattr(article, "title", None),
+            trigger_source=trigger_source,
+            action_param=action_param or (extra_config.get("prompt_style") if extra_config else None),
         )
+
+    async def execute_all_processors(
+        self,
+        article: ArticleDTO,
+        user_id: Optional[int] = None,
+        http_client: Optional[Any] = None,
+        trigger_source: str = "feed_crawl",
+    ) -> ArticleDTO:
+        """依序執行所有已啟用之處理外掛 (Pipeline all active processor plugins sequentially).
+
+        :param article: 待處理之 ArticleDTO
+        :param user_id: 觸發用戶 ID
+        :param http_client: 注入之安全 HTTP 客戶端
+        :param trigger_source: 觸發來源 ('feed_crawl', 'rule', 'manual')
+        :return: 經所有處理外掛加工後之 ArticleDTO
+        """
+        current_article = article
+        from omnirss.core.circuit_breaker import get_circuit_breaker
+        cb = get_circuit_breaker()
+
+        for plugin_id, plugin in self._plugins.items():
+            if isinstance(plugin, BaseProcessorPlugin):
+                # 若外掛已被手動停用，直接略過 (Bypass disabled plugins)
+                rec = cb.get_or_create_record(plugin_id)
+                if not rec.is_enabled:
+                    continue
+
+                effective_config = self.get_effective_config(plugin_id, user_id)
+                # 若為背景爬蟲入庫，且使用者/外掛設定未開啟自動套用，則略過 (Respect auto_apply setting)
+                if trigger_source == "feed_crawl" and not effective_config.get("auto_apply", True):
+                    continue
+
+                try:
+                    res = await self.execute_processor(
+                        plugin_id=plugin_id,
+                        article=current_article,
+                        user_id=user_id,
+                        http_client=http_client,
+                        trigger_source=trigger_source,
+                    )
+                    if res is not None:
+                        current_article = res
+                except Exception as exc:
+                    logger.warning(
+                        f"Processor plugin '{plugin_id}' execution skipped/failed: {exc}"
+                    )
+        return current_article
 
 
 _PLUGIN_MANAGER: Optional[PluginManager] = None
 
 
 def get_plugin_manager(
-    plugins_dir: Optional[Union[str, Path]] = None
+    plugins_dir: Optional[Union[str, Path]] = None,
+    auto_discover: bool = True,
 ) -> PluginManager:
-    """取得外掛管理器單例 (Get singleton plugin manager).
+    """取得外掛管理器單例並確保已自動掃描 (Get singleton plugin manager with auto-discovery).
 
     :param plugins_dir: 自訂外掛目錄
+    :param auto_discover: 是否自動執行外掛發現
     :return: PluginManager 實例
     """
     global _PLUGIN_MANAGER
     if _PLUGIN_MANAGER is None or plugins_dir is not None:
         _PLUGIN_MANAGER = PluginManager(plugins_dir)
+        if auto_discover:
+            _PLUGIN_MANAGER.discover_and_load()
     return _PLUGIN_MANAGER
+

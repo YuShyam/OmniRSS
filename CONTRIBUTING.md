@@ -22,12 +22,12 @@
 {
   "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
   "id": "yourname/custom-plugin",
-  "name": "我的客製外掛",
+  "name": "客製範例外掛",
   "version": "1.0.0",
   "slot_type": "processor",
-  "author": "Your Name",
-  "description": "說明此插件的功能與用途",
-  "entry_point": "plugin:MyCustomPlugin",
+  "author": "Developer",
+  "description": "說明此外掛的功能與用途",
+  "entry_point": "plugin:CustomSamplePlugin",
   "default_config": {
     "api_key": ""
   }
@@ -41,7 +41,7 @@
 from omnirss.sdk.base_source import BaseSourcePlugin
 from omnirss.sdk.models import ArticleDTO
 
-class MySourcePlugin(BaseSourcePlugin):
+class CustomSourcePlugin(BaseSourcePlugin):
     async def fetch(self, feed_url: str, session) -> list[ArticleDTO]:
         # 使用注入的安全 session (自帶 Anti-SSRF 防護) 發送請求
         resp = await session.get(feed_url)
@@ -55,7 +55,7 @@ from omnirss.sdk.base_processor import BaseProcessorPlugin
 from omnirss.sdk.models import ArticleDTO
 from typing import Optional
 
-class MyProcessorPlugin(BaseProcessorPlugin):
+class CustomProcessorPlugin(BaseProcessorPlugin):
     async def process(self, article: ArticleDTO) -> Optional[ArticleDTO]:
         # 進行正文加工、過濾或打標
         article.extra_tags.append("精選")
@@ -67,7 +67,7 @@ class MyProcessorPlugin(BaseProcessorPlugin):
 from omnirss.sdk.base_action import BaseActionPlugin
 from omnirss.sdk.models import ArticleDTO
 
-class MyActionPlugin(BaseActionPlugin):
+class CustomActionPlugin(BaseActionPlugin):
     async def on_article_starred(self, article: ArticleDTO) -> bool:
         # 當使用者加星時，自動發送 Webhook
         return True
@@ -75,7 +75,7 @@ class MyActionPlugin(BaseActionPlugin):
 
 ---
 
-## 3. 代碼風格與品質要求 (Quality Standards)
+## 3. 程式碼風格與品質要求 (Quality Standards)
 
 - **Docstring 規範**：所有類別與公開函式必須提供符合 **PEP-257** 規範的繁體中文或雙語說明。
 - **型別提示**：100% 採用 Python 3.12 現代 Type Hints (`list[str]`, `str | None`)。
@@ -87,6 +87,6 @@ class MyActionPlugin(BaseActionPlugin):
 ## 4. Pull Request 提交清單 (PR Checklist)
 
 - [ ] 新增或修改的功能已在本地完成測試。
-- [ ] 若新增外掛，已提供完整的 `plugin.json` 與測試用例。
+- [ ] 若新增外掛，已提供完整的 `plugin.json` 與測試案例。
 - [ ] 程式碼無未捕獲的嚴重例外，符合安全防護規範。
 - [ ] 繁體中文與英文語系檔 (`locales/*.json`) 已對齊新增的 UI 鍵名。

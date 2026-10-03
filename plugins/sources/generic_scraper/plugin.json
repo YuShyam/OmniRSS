@@ -1,11 +1,17 @@
 {
   "$schema": "https://omnirss.local/schemas/plugin-manifest.v1.json",
   "id": "omnirss/generic-scraper",
-  "name": "通用 Web / JSON API 轉 RSS 來源外掛",
+  "name": {
+    "zh-TW": "通用 Web / JSON API 轉 RSS 來源外掛",
+    "en-US": "Generic Web / JSON API Scraper Plugin"
+  },
   "version": "1.0.0",
   "slot_type": "source",
   "author": "OmniRSS Core Team",
-  "description": "提供聲明式 CSS Selector 與 JSONPath 配置，將無 RSS 輸出的現代 SPA 網站或公開 JSON API 轉化為標準 ArticleDTO 清單。",
+  "description": {
+    "zh-TW": "提供聲明式 CSS Selector 與 JSONPath 配置，將無 RSS 輸出的現代 SPA 網站或公開 JSON API 轉化為標準 ArticleDTO 清單。",
+    "en-US": "Declarative CSS Selector & JSONPath scraper converting modern SPA websites and JSON APIs into standard ArticleDTO feeds."
+  },
   "entry_point": "plugin:GenericScraperPlugin",
   "minimum_omnirss_version": "1.0.0",
   "dependencies": [
@@ -15,6 +21,9 @@
   "permissions": [
     "network_access:outbound",
     "db_read:feeds"
+  ],
+  "match_patterns": [
+    "<all_urls>"
   ],
   "default_config": {
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36",

@@ -30,46 +30,70 @@
 /* Active Scope / Filter Capsule Bar */
 .active-filter-bar {
   display: none;
-  background: var(--bg-surface);
+  background: var(--bg-surface-active, rgba(59, 130, 246, 0.05));
   border-bottom: 1px solid var(--border-color);
-  padding: 3px 10px;
+  padding: 4px 12px;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
   font-size: 11px;
+  min-height: 28px;
+  gap: 8px;
 }
 .active-filter-bar.active {
   display: flex;
+}
+.active-filter-capsules {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .active-filter-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--accent-primary-dim, rgba(59, 130, 246, 0.12));
-  color: var(--accent-primary, #3b82f6);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  border-radius: 9999px;
-  padding: 1px 8px;
+  border-radius: 6px;
+  padding: 2px 8px;
   font-weight: 500;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.active-filter-pill.scope-pill {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.active-filter-pill.search-pill {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.active-filter-pill.search-pill .btn-clear-filter {
+  color: #fbbf24;
+}
+.active-filter-pill.scope-pill .btn-clear-filter {
+  color: #60a5fa;
 }
 .btn-clear-filter {
-  background: none;
+  background: rgba(255, 255, 255, 0.08);
   border: none;
-  color: var(--accent-primary, #3b82f6);
+  color: inherit;
   cursor: pointer;
-  padding: 0 2px;
-  font-size: 11px;
+  padding: 1px 4px;
+  font-size: 10px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  opacity: 0.8;
-  transition: opacity 0.1s, transform 0.1s;
+  border-radius: 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s, background-color 0.15s;
 }
 .btn-clear-filter:hover {
   opacity: 1;
-  transform: scale(1.2);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* 24px Table Header Bar */

@@ -21,8 +21,15 @@ env/
 logs/
 *.log
 
+# Scratch & Temporary Files
+scratch/
+scratch_*
+*.bak
+*.tmp
+
 # OS & IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+

@@ -7,6 +7,7 @@ streaming 10MB DoS cutoff, and safe feed parsing into ArticleDTO objects.
 
 import asyncio
 import hashlib
+import html as py_html
 import ipaddress
 import logging
 import random
@@ -386,16 +387,9 @@ class CrawlerEngine:
         :return: 抓取與解析結果 CrawlResult 實例
         """
         current_url = url
-        # 智慧 PTT URL 正規化 (自動升級舊版 rss.ptt.cc 至官方 https://www.ptt.cc/atom/*.xml)
-        if "rss.ptt.cc" in current_url.lower():
-            board = current_url.rstrip("/").split("/")[-1].replace(".xml", "")
-            current_url = f"https://www.ptt.cc/atom/{board}.xml"
-
         # 準備基礎標頭組與 Auto-Referer
         base_headers = dict(CHROME_HEADERS)
         base_headers["Referer"] = get_origin_referer(current_url)
-        if "ptt.cc" in current_url.lower():
-            base_headers["Cookie"] = "over18=1"
         if auth and auth[0]:
             import base64
             auth_str = f"{auth[0]}:{auth[1] or ''}"
@@ -424,8 +418,8 @@ class CrawlerEngine:
                     used_stage="stage1_chrome_304",
                 )
             if 200 <= status < 300:
-                articles, feed_meta = self.parse_feed_content(
-                    body, current_url
+                articles, feed_meta = await asyncio.to_thread(
+                    self.parse_feed_content, body, current_url
                 )
                 return CrawlResult(
                     url=current_url,
@@ -461,8 +455,8 @@ class CrawlerEngine:
                         used_stage="stage2_https_304",
                     )
                 if 200 <= status < 300:
-                    articles, feed_meta = self.parse_feed_content(
-                        body, https_url
+                    articles, feed_meta = await asyncio.to_thread(
+                        self.parse_feed_content, body, https_url
                     )
                     return CrawlResult(
                         url=https_url,
@@ -502,8 +496,8 @@ class CrawlerEngine:
                     used_stage="stage3_quiterss_304",
                 )
             if 200 <= status < 300:
-                articles, feed_meta = self.parse_feed_content(
-                    body, current_url
+                articles, feed_meta = await asyncio.to_thread(
+                    self.parse_feed_content, body, current_url
                 )
                 return CrawlResult(
                     url=current_url,
@@ -520,6 +514,7 @@ class CrawlerEngine:
         except Exception as e:
             last_error = str(e)
             logger.debug(f"Stage 3 failed for '{current_url}': {e}")
+
 
         # =====================================================================
         # Stage 4: FlareSolverr 側邊欄智能調度 (若已配置且有需求)
@@ -559,8 +554,6 @@ class CrawlerEngine:
         current_url = url
         base_headers = dict(CHROME_HEADERS)
         base_headers["Referer"] = get_origin_referer(current_url)
-        if "ptt.cc" in current_url.lower():
-            base_headers["Cookie"] = "over18=1"
         if auth and auth[0]:
             import base64
             auth_str = f"{auth[0]}:{auth[1] or ''}"
@@ -616,8 +609,8 @@ class CrawlerEngine:
             solution = data.get("solution", {})
             html_text = solution.get("response", "")
             raw_bytes = html_text.encode("utf-8")
-            articles, feed_meta = self.parse_feed_content(
-                raw_bytes, target_url
+            articles, feed_meta = await asyncio.to_thread(
+                self.parse_feed_content, raw_bytes, target_url
             )
             return CrawlResult(
                 url=target_url,
@@ -744,226 +737,44 @@ class CrawlerEngine:
         return articles, feed_dto
 
     @staticmethod
-    def _extract_ptt(html_str: str) -> Optional[str]:
-        """PTT Web 版 BBS 結構、文章內文排版與推文專屬解析器 (PTT BBS Fulltext Parser)."""
-        try:
-            import html as py_html
-            from bs4 import BeautifulSoup
-
-            soup = BeautifulSoup(html_str, "html.parser")
-            main_content = soup.find(id="main-content")
-            if not main_content:
-                return None
-
-            # 1. 抽取推文區塊並轉換為結構化卡片 HTML
-            pushes = main_content.find_all("div", class_="push")
-            push_items_html = []
-            for p in pushes:
-                tag_span = p.find("span", class_="push-tag")
-                user_span = p.find("span", class_="push-userid")
-                content_span = p.find("span", class_="push-content")
-                time_span = p.find("span", class_="push-ipdatetime")
-
-                tag_text = tag_span.get_text(strip=True) if tag_span else ""
-                user_text = user_span.get_text(strip=True) if user_span else ""
-                content_text = content_span.get_text(strip=True) if content_span else ""
-                time_text = time_span.get_text(strip=True) if time_span else ""
-
-                tag_color = "#10b981" if "推" in tag_text else "#ef4444" if "噓" in tag_text else "#6b7280"
-                push_items_html.append(
-                    f'<div style="display:flex; align-items:baseline; gap:8px; padding:4px 0; border-bottom:1px solid var(--border-color, rgba(0,0,0,0.05)); font-size:13px;">'
-                    f'<span style="font-weight:bold; color:{tag_color}; width:20px; flex-shrink:0;">{py_html.escape(tag_text)}</span>'
-                    f'<span style="font-weight:600; color:var(--text-secondary, #4b5563); width:100px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{py_html.escape(user_text)}</span>'
-                    f'<span style="flex:1; color:var(--text-primary, #111827); word-break:break-word;">{py_html.escape(content_text)}</span>'
-                    f'<span style="font-size:11px; color:var(--text-muted, #9ca3af); flex-shrink:0;">{py_html.escape(time_text)}</span>'
-                    f'</div>'
-                )
-                p.decompose()
-
-            # 2. 抽取頂部 BBS metadata (作者、看板、標題、時間)
-            meta_items = []
-            for meta in main_content.find_all("div", class_="article-metaline"):
-                tag = meta.find("span", class_="article-meta-tag")
-                val = meta.find("span", class_="article-meta-value")
-                if tag and val:
-                    meta_items.append((tag.get_text(strip=True), val.get_text(strip=True)))
-                meta.decompose()
-
-            for meta in main_content.find_all("div", class_="article-metaline-right"):
-                tag = meta.find("span", class_="article-meta-tag")
-                val = meta.find("span", class_="article-meta-value")
-                if tag and val:
-                    meta_items.append((tag.get_text(strip=True), val.get_text(strip=True)))
-                meta.decompose()
-
-            # 3. 取得主內文文字並做智慧排版與換行處理
-            raw_text = main_content.get_text()
-
-            # 圖片網址偵測 Regex
-            img_url_pattern = re.compile(
-                r'(https?://(?:i\.)?imgur\.com/[a-zA-Z0-9]+(?:\.[a-zA-Z]{3,4})?|https?://[^\s<>"\']+\.(?:jpg|jpeg|png|gif|webp|bmp))',
-                re.IGNORECASE,
-            )
-
-            # 一般網址偵測 Regex
-            link_url_pattern = re.compile(
-                r'(https?://[^\s<>"\']+)',
-                re.IGNORECASE,
-            )
-
-            # 將文字依換行分割，保留所有行距與縮排
-            paragraphs = raw_text.split('\n')
-            formatted_paragraphs = []
-
-            for line in paragraphs:
-                line_str = line.strip()
-                if not line_str:
-                    formatted_paragraphs.append('<br>')
-                    continue
-
-                # 簽名檔分界線與發信站美化
-                if line_str == '--':
-                    formatted_paragraphs.append('<hr style="border:none; border-top:1px dashed var(--border-color, #ccc); margin:16px 0;" />')
-                    continue
-                if line_str.startswith('※ 發信站:') or line_str.startswith('※ 文章網址:'):
-                    escaped_line = py_html.escape(line_str)
-                    linked_line = link_url_pattern.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer" style="color:var(--accent-primary, #3b82f6); text-decoration:underline;">\1</a>', escaped_line)
-                    formatted_paragraphs.append(f'<div style="font-size:12px; color:var(--text-muted, #666); margin:4px 0;">{linked_line}</div>')
-                    continue
-
-                # 檢查整行是否為圖片網址
-                img_match = img_url_pattern.search(line_str)
-                if img_match and len(line_str) == len(img_match.group(0)):
-                    img_url = img_match.group(0)
-                    if "imgur.com" in img_url and not any(img_url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
-                        img_url = img_url.replace("imgur.com", "i.imgur.com") + ".jpg"
-                    formatted_paragraphs.append(f'<div style="margin:12px 0; text-align:center;"><img src="{img_url}" alt="PTT Image" style="max-width:100%; max-height:600px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);" loading="lazy" /></div>')
-                    continue
-
-                # 一般內文行：轉義 HTML、替換圖片與超連結
-                escaped = py_html.escape(line_str)
-
-                def _img_sub(m):
-                    u = m.group(1)
-                    if "imgur.com" in u and not any(u.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
-                        u = u.replace("imgur.com", "i.imgur.com") + ".jpg"
-                    return f'<div style="margin:8px 0; text-align:center;"><img src="{u}" alt="PTT Image" style="max-width:100%; border-radius:6px;" loading="lazy" /></div>'
-
-                with_imgs = img_url_pattern.sub(_img_sub, escaped)
-                with_links = link_url_pattern.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer" style="color:var(--accent-primary, #3b82f6); text-decoration:underline;">\1</a>', with_imgs)
-
-                formatted_paragraphs.append(f'<p style="margin:6px 0; line-height:1.75; font-size:15px; color:var(--text-primary);">{with_links}</p>')
-
-            # 4. 組合 BBS Metadata Header
-            meta_block = ""
-            if meta_items:
-                meta_rows = "".join(
-                    f'<div style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:4px;">'
-                    f'<span style="font-weight:600; color:var(--text-secondary); width:40px; flex-shrink:0;">{py_html.escape(k)}</span>'
-                    f'<span style="color:var(--text-primary);">{py_html.escape(v)}</span>'
-                    f'</div>'
-                    for k, v in meta_items
-                )
-                meta_block = (
-                    '<div class="ptt-meta-card" style="margin-bottom:18px; padding:12px 14px; background:var(--bg-surface-elevated, rgba(0,0,0,0.03)); border-left:3px solid var(--accent-primary, #3b82f6); border-radius:4px;">'
-                    + meta_rows
-                    + '</div>'
-                )
-
-            # 5. 組合推文區塊
-            pushes_block = ""
-            if push_items_html:
-                pushes_block = (
-                    '<div style="margin-top:28px; padding:16px; background:var(--card-bg, rgba(0,0,0,0.02)); border-radius:10px; border:1px solid var(--border-color, rgba(0,0,0,0.08));">'
-                    f'<h4 style="margin:0 0 12px 0; font-size:14px; font-weight:600; color:var(--text-primary, #111827);">💬 PTT 鄉民推文 ({len(push_items_html)})</h4>'
-                    + "".join(push_items_html)
-                    + '</div>'
-                )
-
-            body_html = meta_block + "".join(formatted_paragraphs) + pushes_block
-            return HTMLSanitizer.clean(body_html)
-        except Exception as exc:
-            logger.debug(f"PTT custom extraction error: {exc}")
-            return None
-
-    @staticmethod
-    def _extract_yahoo(html_str: str) -> Optional[str]:
-        """Yahoo 新聞與影音內文專屬解析器 (Yahoo News .caas-body Fulltext Parser)."""
-        try:
-            from bs4 import BeautifulSoup
-
-            soup = BeautifulSoup(html_str, "html.parser")
-            body_container = (
-                soup.find(class_=re.compile(r"caas-body|story-body|article-body"))
-                or soup.find("article")
-            )
-            if not body_container:
-                return None
-
-            # 移除廣告、社群分享與無關推薦區塊
-            for noise in body_container.find_all(
-                class_=re.compile(r"caas-readmore|caas-share|ad-container|advertisement|inline-ad")
-            ):
-                noise.decompose()
-
-            # 修正圖片來源
-            for img in body_container.find_all("img"):
-                real_src = img.get("data-src") or img.get("src") or img.get("data-original")
-                if real_src and real_src.startswith("http"):
-                    img["src"] = real_src
-                    img["style"] = "max-width:100%; height:auto; border-radius:8px; margin:12px 0;"
-                else:
-                    img.decompose()
-
-            paragraphs = body_container.find_all(["p", "img", "blockquote", "h2", "h3"])
-            if not paragraphs:
-                return None
-
-            out_html = "".join(str(p) for p in paragraphs if p.get_text(strip=True) or p.name == "img")
-            return HTMLSanitizer.clean(out_html) if len(out_html) > 50 else None
-        except Exception as exc:
-            logger.debug(f"Yahoo News custom extraction error: {exc}")
-            return None
-
-    @staticmethod
     def _extract_semantic_fallback(html_str: str) -> Optional[str]:
-        """語意標籤與閱讀器啟發式回退抽取器 (Semantic HTML & Readability Heuristic Fallback)."""
+        """語意標籤與閱讀器啟發式回退抽取器 (Semantic HTML & Readability Heuristic Fallback via lxml)."""
         try:
-            from bs4 import BeautifulSoup
+            import lxml.html
 
-            soup = BeautifulSoup(html_str, "html.parser")
-            # 移除 script, style, nav, footer, header
-            for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "aside"]):
-                tag.decompose()
+            doc = lxml.html.fromstring(html_str)
+            # 移除 script, style, nav, footer, header, noscript, aside
+            for tag in doc.xpath('//script | //style | //nav | //footer | //header | //noscript | //aside'):
+                parent = tag.getparent()
+                if parent is not None:
+                    parent.remove(tag)
 
-            main_elem = (
-                soup.find("article")
-                or soup.find("main")
-                or soup.find(class_=re.compile(r"content|post-content|article-content|entry-content"))
-                or soup.find(id=re.compile(r"content|main|article"))
-            )
+            main_elem = None
+            matches = doc.xpath('//article | //main | //*[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "article-content") or contains(@class, "entry-content")]')
+            if matches:
+                main_elem = matches[0]
+            else:
+                body_matches = doc.xpath('//body')
+                if body_matches:
+                    main_elem = body_matches[0]
 
-            if not main_elem:
-                main_elem = soup.body
-
-            if not main_elem:
+            if main_elem is None:
                 return None
 
-            # 取得所有實質段落
-            paragraphs = main_elem.find_all(["p", "img", "blockquote", "h2", "h3"])
+            paragraphs = main_elem.xpath('.//p | .//img | .//blockquote | .//h2 | .//h3')
             if not paragraphs:
                 return None
 
             out_parts = []
             for p in paragraphs:
-                if p.name == "img":
+                if p.tag == "img":
                     src = p.get("data-src") or p.get("src")
                     if src and src.startswith("http"):
                         out_parts.append(f'<p><img src="{src}" style="max-width:100%; border-radius:8px;" /></p>')
                 else:
-                    text = p.get_text(strip=True)
+                    text = p.text_content().strip()
                     if len(text) > 5:
-                        out_parts.append(f"<p>{text}</p>")
+                        out_parts.append(f"<p>{py_html.escape(text)}</p>")
 
             if out_parts:
                 combined = "".join(out_parts)
@@ -977,9 +788,9 @@ class CrawlerEngine:
     def extract_full_text_from_html(
         cls, html_str: str, base_url: str = ""
     ) -> Optional[str]:
-        """三階梯高韌性全文萃取引擎 (Multi-Tier High-Resilience Fulltext Extractor).
+        """雙階梯高韌性通用全文萃取引擎 (Two-Tier High-Resilience Universal Fulltext Extractor).
 
-        階梯一：特定平台專屬語意解析 (PTT BBS + 推文 / Yahoo 新聞 .caas-body)
+        階梯一：PTT BBS / 結構化 DOM 專屬快速通道
         階梯二：Trafilatura 機器學習智能正文抽取
         階梯三：Semantic HTML 與 Readability 啟發式段落回退
 
@@ -990,20 +801,18 @@ class CrawlerEngine:
         if not html_str:
             return None
 
+        # 特殊來源快速通道：PTT BBS 結構化網頁 (Special Fast-Path: PTT BBS DOM)
+        # PTT 內文多為直屬 text node，Trafilatura 會誤刪正文僅留推文，因此直接保留完整原始 HTML 由 PttEnhancer 加工
         url_lower = (base_url or "").lower()
+        if (
+            "ptt.cc" in url_lower
+            or "pttweb.cc" in url_lower
+            or 'id="main-content"' in html_str
+            or 'class="bbs-screen"' in html_str
+        ):
+            return html_str
 
-        # 階梯一 (Tier 1): 專屬平台抽取
-        if "ptt.cc" in url_lower or 'id="main-content"' in html_str:
-            ptt_res = cls._extract_ptt(html_str)
-            if ptt_res and len(ptt_res) > 30:
-                return ptt_res
-
-        if "yahoo.com" in url_lower or "caas-body" in html_str:
-            yahoo_res = cls._extract_yahoo(html_str)
-            if yahoo_res and len(yahoo_res) > 50:
-                return yahoo_res
-
-        # 階梯二 (Tier 2): Trafilatura 機器學習正文萃取
+        # 階梯一 (Tier 1): Trafilatura 機器學習正文萃取
         try:
             import trafilatura
 
@@ -1021,7 +830,7 @@ class CrawlerEngine:
         except Exception as e:
             logger.debug(f"Trafilatura extraction failed for {base_url}: {e}")
 
-        # 階梯三 (Tier 3): 語意 HTML 與 Readability 啟發式回退
+        # 階梯二 (Tier 2): 語意 HTML 與 Readability 啟發式回退
         fallback_res = cls._extract_semantic_fallback(html_str)
         if fallback_res:
             return fallback_res

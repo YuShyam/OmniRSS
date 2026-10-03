@@ -1,7 +1,7 @@
 # OmniRSS 前後端 REST API 介面規格書 (API Contract & DTO Specification)
 
 > **專案名稱**：OmniRSS  
-> **版本**：v1.0.0 (Context7 & Pydantic v2 Standard)  
+> **版本**：v1.0.0 (Pydantic v2 Standard)  
 > **日期**：2026/09/22  
 > **規格書文件路徑**：`docs/API_CONTRACT.md`
 
@@ -9,8 +9,8 @@
 
 ## 1. 架構概述與設計原則 (Design Philosophy)
 
-OmniRSS 的 API 遵循現代 RESTful 規範與 **Context7 上游工程標準**（FastAPI + Pydantic v2）：
-1. **極致輕量與低延遲**：
+OmniRSS 的 API 遵循現代 RESTful 規範（FastAPI + Pydantic v2）：
+1. **輕量設計與低延遲**：
    - 列表 API (`GET /api/articles`) 僅回傳小於 100 Bytes 的中繼欄位與 200 字 Snippet，絕不傳輸龐大 HTML 正文。
    - 完整正文僅在點擊個別文章時透過 `GET /api/articles/{id}` 按需非同步載入。
 2. **全參數開放 (Full Parameter Exposure)**：
@@ -215,7 +215,7 @@ class FeedTreeResponseDTO(BaseModel):
 - `limit`: `int = 100` —— 每頁筆數（預設 100，支援百萬量級虛擬滾動）。
 - `offset`: `int = 0` —— 偏移分頁。
 
-#### Article ListItem Schema (極致輕量化，單筆 < 100B)
+#### Article ListItem Schema (輕量結構，單筆 < 100B)
 ```python
 class ArticleTagBadgeDTO(BaseModel):
     id: int

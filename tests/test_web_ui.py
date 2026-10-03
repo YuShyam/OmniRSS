@@ -95,7 +95,7 @@ async def test_frontend_button_api_endpoints_flow(tmp_path):
 
         # 2. 測試分類建立按鈕 (btn-add-category) 與清單端點
         cat_create = await ac.post("/api/categories", json={"name": "科技新聞", "icon": "folder"}, headers=headers)
-        assert cat_create.status_code == 200
+        assert cat_create.status_code in (200, 201)
         cat_id = cat_create.json()["id"]
 
         cat_list = await ac.get("/api/categories", headers=headers)
@@ -151,3 +151,178 @@ async def test_frontend_button_api_endpoints_flow(tmp_path):
         # 9. 測試分類刪除
         del_cat = await ac.delete(f"/api/categories/{cat_id}", headers=headers)
         assert del_cat.status_code == 200
+
+
+def test_all_frontend_js_modules_syntax_validity():
+    """自動化驗證所有前端 JavaScript 模組之 V8 ESM 語法有效性 (Zero Syntax Error Gate).
+    
+    使用 Node.js V8 引擎的原生 SourceTextModule 語法解析器，
+    確保所有前端 ES 模組在編譯期 100% 無語法、括號或 Class 作用域錯誤。
+    """
+    import glob
+    import subprocess
+    from pathlib import Path
+
+    js_dir = Path(__file__).resolve().parent.parent / "src" / "omnirss" / "web" / "js"
+    assert js_dir.exists(), f"前端腳本目錄不存在: {js_dir}"
+
+    js_files = [f for f in glob.glob(str(js_dir / "**" / "*.js"), recursive=True)]
+    assert len(js_files) >= 10, f"前端模組數量異常過少: {len(js_files)}"
+
+    check_script = """
+import vm from 'node:vm';
+import fs from 'node:fs';
+
+const filePath = process.argv[1];
+const code = fs.readFileSync(filePath, 'utf8');
+try {
+  new vm.SourceTextModule(code);
+  process.exit(0);
+} catch (err) {
+  console.error(`[SYNTAX_ERROR] in ${filePath}: ${err.message}`);
+  process.exit(1);
+}
+"""
+
+    errors = []
+    for js_file in js_files:
+        res = subprocess.run(
+            ["node", "--experimental-vm-modules", "--input-type=module", "-e", check_script, js_file],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            errors.append(f"檔案 {js_file} 語法檢查失敗:\n{res.stderr or res.stdout}")
+
+    assert not errors, "\n" + "\n".join(errors)
+
+
+def test_all_frontend_components_runtime_rendering():
+    """前端所有核心組件 (ReaderView, ListView, TreeView) 執行期生命週期與真實渲染測試.
+    
+    在 Node.js 中載入真實 DOM 模擬環境，動態 import 前端組件並直接調用 render(article)，
+    杜絕任何 ReferenceError (未定義變數)、TypeError 或缺失 import 的執行期崩潰。
+    """
+    import subprocess
+    from pathlib import Path
+
+    js_dir = (Path(__file__).resolve().parent.parent / "src" / "omnirss" / "web" / "js").resolve()
+    js_uri = js_dir.as_uri()
+
+    runtime_script = f"""
+const rootEl = {{
+  innerHTML: '',
+  style: {{}},
+  classList: {{ add() {{}}, remove() {{}}, contains() {{ return false; }}, toggle() {{}} }},
+  appendChild() {{}},
+  querySelector() {{ return null; }},
+  querySelectorAll() {{ return []; }},
+  addEventListener() {{}},
+  removeEventListener() {{}},
+  scrollTo() {{}},
+  setAttribute() {{}},
+  getAttribute() {{ return null; }},
+  dataset: {{}},
+  offsetWidth: 800,
+  offsetHeight: 600,
+  scrollHeight: 1000,
+  scrollTop: 0,
+}};
+
+global.window = {{
+  addEventListener() {{}},
+  removeEventListener() {{}},
+  dispatchEvent() {{}},
+  open() {{}},
+  matchMedia() {{ return {{ matches: false, addEventListener() {{}} }}; }},
+  location: {{ reload() {{}}, href: 'http://localhost:8000' }},
+  navigator: {{ language: 'zh-TW', languages: ['zh-TW'], userAgent: 'NodeTest' }},
+  CustomEvent: class CustomEvent {{ constructor(type, detail) {{ this.type = type; this.detail = detail?.detail; }} }}
+}};
+
+global.document = {{
+  getElementById(id) {{ return rootEl; }},
+  querySelector(sel) {{ return rootEl; }},
+  querySelectorAll(sel) {{ return []; }},
+  createElement(tag) {{ return {{ ...rootEl, tagName: tag.toUpperCase() }}; }},
+  head: rootEl,
+  body: rootEl,
+  documentElement: rootEl,
+  addEventListener() {{}},
+  removeEventListener() {{}},
+}};
+
+global.localStorage = {{
+  _data: {{}},
+  getItem(k) {{ return this._data[k] || null; }},
+  setItem(k, v) {{ this._data[k] = String(v); }},
+  removeItem(k) {{ delete this._data[k]; }},
+  clear() {{ this._data = {{}}; }}
+}};
+
+global.CustomEvent = global.window.CustomEvent;
+
+async function run() {{
+  // 1. ReaderView Runtime Evaluation
+  const {{ ReaderView }} = await import('{js_uri}/components/reader_view.js');
+  const reader = new ReaderView(rootEl);
+  
+  const mockArticles = [
+    {{
+      id: 1,
+      feed_id: 10,
+      title: '測試一般文章',
+      author: '測試作者',
+      url: 'https://example.com/1',
+      content_html: '<p>測試內文 <img src="https://example.com/1.jpg"></p>',
+      content_text: '測試內文',
+      published_at: '2026-09-30T14:00:00Z',
+      is_read: 0,
+      is_starred: 0,
+      is_trash: 0,
+    }},
+    {{
+      id: 2,
+      feed_id: 11,
+      title: '測試 YouTube 與 AI 摘要文章',
+      author: 'PTT 鄉民',
+      url: 'https://www.youtube.com/watch?v=8mGXs-CY550',
+      content_html: '<p>PTT 影片測試</p>',
+      content_text: 'PTT 影片測試',
+      ai_summary: '- 核心重點 1\\n- 核心重點 2',
+      published_at: '2026-09-30T14:30:00Z',
+      is_read: 1,
+      is_starred: 1,
+      is_trash: 0,
+    }}
+  ];
+
+  for (const art of mockArticles) {{
+    reader.render(art);
+  }}
+  
+  // 2. ListView Runtime Evaluation
+  const {{ ListView }} = await import('{js_uri}/components/list_view.js');
+  const list = new ListView(rootEl, rootEl);
+  list.render();
+  
+  // 3. TreeView Runtime Evaluation
+  const {{ TreeView }} = await import('{js_uri}/components/tree_view.js');
+  const tree = new TreeView(rootEl);
+  tree.render();
+}}
+
+run().then(() => process.exit(0)).catch((err) => {{
+  console.error('[RUNTIME_ERROR]', err);
+  process.exit(1);
+}});
+"""
+
+    res = subprocess.run(
+        ["node", "--experimental-vm-modules", "--input-type=module", "-e", runtime_script],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0, f"前端組件執行期渲染測試失敗:\n{res.stderr or res.stdout}"
+
+

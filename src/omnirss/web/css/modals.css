@@ -82,6 +82,7 @@
 
 #modal-rules .modal-box,
 #modal-plugins .modal-box,
+#modal-account .modal-box,
 .modal-box.modal-lg {
   width: 820px;
   height: 600px;
@@ -750,5 +751,498 @@ input:checked + .switch-slider:before {
   background: var(--bg-surface-active);
   border-color: var(--accent-primary);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Account & User Management Modals (Craft UI Standard)                       */
+/* -------------------------------------------------------------------------- */
+.user-nav-btn {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Modal sizing */
+#modal-account .modal-box {
+  width: 820px;
+  height: 600px;
+  max-width: 95vw;
+  max-height: 88vh;
+}
+
+/* Account Section Card */
+.account-section-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  transition: border-color var(--transition-fast, 0.15s ease);
+}
+
+.account-section-card:hover {
+  border-color: var(--border-color-hover, rgba(255, 255, 255, 0.15));
+}
+
+.account-section-card:last-child {
+  margin-bottom: 0;
+}
+
+.account-section-header {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+/* Profile Card */
+.account-profile-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-profile-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.account-avatar-large {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-primary-dim, rgba(59, 130, 246, 0.15));
+  color: var(--accent-primary, #3b82f6);
+  border: 2px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.account-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.account-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.account-meta-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Role Badges (Pills) */
+.badge-role-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.badge-role-pill.admin,
+.badge-role-admin {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.badge-role-pill.user,
+.badge-role-user {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-secondary, #94a3b8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.badge-current-user {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  white-space: nowrap;
+}
+
+/* Admin Create User Form */
+.create-user-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1.1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.create-user-grid .form-label {
+  font-size: 11px;
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+}
+
+.create-user-grid .form-input,
+.create-user-grid .form-select {
+  height: 36px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.create-user-grid .btn-create-submit {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Users Table Container & Header */
+.users-table-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.users-table-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.users-table-container {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--bg-surface);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.users-table thead th {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.04));
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.users-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.05));
+  vertical-align: middle;
+}
+
+.users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.users-table tbody tr:hover {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.03));
+}
+
+.users-table .col-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.users-table .user-avatar-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-primary-dim, rgba(59, 130, 246, 0.15));
+  color: var(--accent-primary, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.users-table .user-name-text {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.user-action-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.btn-user-action {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  height: 26px;
+  border-radius: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.btn-user-action:hover:not(:disabled) {
+  background: var(--bg-surface-active, rgba(255, 255, 255, 0.1));
+  border-color: var(--accent-primary, #3b82f6);
+  color: var(--accent-primary, #3b82f6);
+}
+
+.btn-user-action.btn-action-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.btn-user-action.btn-action-danger:hover:not(:disabled) {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.btn-user-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Gemini Summary Prompt Presets Manager Styles                               */
+/* -------------------------------------------------------------------------- */
+.gemini-presets-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.gemini-presets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gemini-presets-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gemini-presets-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gemini-presets-help {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 12px;
+  line-height: 1.4;
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.03));
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.gemini-preset-editor-box {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--accent-primary, #3b82f6);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.gemini-presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.gemini-preset-card {
+  background: var(--bg-surface, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.gemini-preset-card:hover {
+  border-color: var(--border-color-hover, rgba(255, 255, 255, 0.2));
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
+}
+
+.gemini-preset-card.is-default {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.gemini-preset-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gemini-preset-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gemini-preset-card-title .preset-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gemini-preset-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.gemini-preset-prompt-preview {
+  font-family: var(--font-mono, "SF Mono", Consolas, monospace);
+  font-size: 11px;
+  color: var(--text-secondary, #cbd5e1);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 6px 8px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  max-height: 52px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: max-height 0.2s ease;
+}
+
+.gemini-preset-prompt-preview.expanded {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.badge-preset-default {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.badge-preset-type {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #94a3b8);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-preset-type.custom {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.ai-summary-menu-item.is-default {
+  font-weight: 600;
+  color: var(--accent-primary, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+
 
 

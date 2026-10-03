@@ -614,6 +614,25 @@ export class ListView {
     }
   }
 
+  updateRowReadState(articleId, isRead) {
+    const row = this.bodyEl.querySelector(`.article-row[data-id="${articleId}"]`);
+    if (row) {
+      row.classList.toggle("unread", !isRead);
+      const statusCell = row.querySelector(".col-status");
+      if (statusCell) {
+        statusCell.innerHTML = isRead
+          ? `<span class="read-indicator read" title="${t("columns.read") || "已讀"}">○</span>`
+          : `<span class="read-indicator unread" title="${t("columns.unread") || "未讀"}">●</span>`;
+      }
+    }
+    const articles = store.get("articles") || [];
+    const art = articles.find((a) => a.id === articleId);
+    if (art) {
+      art.is_read = isRead ? 1 : 0;
+      art.is_unread = !isRead;
+    }
+  }
+
   async toggleArticleRead(articleId) {
     try {
       const articles = store.get("articles") || [];
@@ -623,9 +642,7 @@ export class ListView {
       const isUnread = art.is_read === false || art.is_read === 0 || art.is_unread === true;
       const nextRead = isUnread;
 
-      art.is_read = nextRead ? 1 : 0;
-      art.is_unread = !nextRead;
-      store.set("articles", [...articles]);
+      this.updateRowReadState(articleId, nextRead);
 
       const selected = store.get("selectedArticle");
       if (selected && selected.id === articleId) {
@@ -729,6 +746,7 @@ export class ListView {
     const selectedId = store.get("selectedArticleId");
     const cols = store.get("columns") || {};
     const columnOrder = store.get("columnOrder") || ["status", "star", "title", "feed", "date", "author", "tags"];
+    const visibleColKeys = columnOrder.filter((key) => cols[key] !== false);
 
     // 1. Loading State
     if (state === "loading") {
@@ -754,7 +772,7 @@ export class ListView {
     // 3. Empty States
     if (articles.length === 0) {
       const search = store.get("searchQuery");
-      if (search && search.trim()) {
+      if (search && typeof search === "string" && search.trim() && search.trim() !== "null" && search.trim() !== "undefined") {
         this.bodyEl.innerHTML = `
           <div class="state-card">
             <div class="state-card-icon">
@@ -768,10 +786,7 @@ export class ListView {
         const btnClear = this.bodyEl.querySelector("#btn-clear-search");
         if (btnClear) {
           btnClear.addEventListener("click", () => {
-            const searchInput = document.getElementById("global-search");
-            if (searchInput) searchInput.value = "";
-            store.set("searchQuery", "");
-            window.dispatchEvent(new CustomEvent("omnirss:refresh-all"));
+            window.dispatchEvent(new CustomEvent("omnirss:clear-search"));
           });
         }
         return;
@@ -788,16 +803,29 @@ export class ListView {
             <button class="state-card-btn" id="btn-state-add-feed">${t("empty.no_feeds_btn")}</button>
           </div>
         `;
-      } else if (activeFilter === "unread") {
+      } else if (activeFilter === "unread" || (Boolean(store.get("hideRead")) && activeFilter !== "tag")) {
+        const isHideReadActive = Boolean(store.get("hideRead"));
         this.bodyEl.innerHTML = `
           <div class="state-card">
             <div class="state-card-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             </div>
             <div class="state-card-title">${t("empty.all_read_title")}</div>
-            <div class="state-card-desc">${t("empty.all_read_desc")}</div>
+            <div class="state-card-desc">${isHideReadActive ? "目前已開啟「隱藏已讀」，目前無未讀文章。" : t("empty.all_read_desc")}</div>
+            ${isHideReadActive ? `<button class="state-card-btn" id="btn-state-show-read" style="margin-top: 10px; cursor: pointer;">👁️ 顯示所有文章 (關閉隱藏已讀)</button>` : ""}
           </div>
         `;
+        const btnShowRead = this.bodyEl.querySelector("#btn-state-show-read");
+        if (btnShowRead) {
+          btnShowRead.addEventListener("click", () => {
+            store.set("hideRead", false);
+            const btnHideRead = document.getElementById("btn-toggle-hide-read");
+            if (btnHideRead) btnHideRead.classList.remove("active");
+            window.dispatchEvent(new CustomEvent("omnirss:filter-changed"));
+            window.dispatchEvent(new CustomEvent("omnirss:save-settings-debounced"));
+          });
+        }
+        return;
       } else if (activeFilter === "category") {
         this.bodyEl.innerHTML = `
           <div class="state-card">
@@ -853,12 +881,14 @@ export class ListView {
     }
 
     // 4. Normal Rows Rendering (Driven by columnOrder)
-    const visibleColKeys = columnOrder.filter((k) => cols[k] !== false);
-
     const html = articles.map((art) => {
       const isSelected = art.id === selectedId;
       const isUnread = art.is_read === false || art.is_read === 0 || art.is_unread === true;
       const formattedDate = this.formatDate(art.published_at);
+      const highlightColor = art.highlight_color || "";
+      const highlightStyle = highlightColor
+        ? `background-color: color-mix(in srgb, ${this.escape(highlightColor)} 15%, transparent); border-left: 3px solid ${this.escape(highlightColor)};`
+        : "";
 
       const cellHtmls = visibleColKeys.map((colKey) => {
         const colDef = pluginRegistry.getListColumn(colKey);
@@ -867,7 +897,7 @@ export class ListView {
       }).join("");
 
       return `
-        <div class="article-row ${isSelected ? "selected" : ""} ${isUnread ? "unread" : ""}" data-id="${art.id}">
+        <div class="article-row ${isSelected ? "selected" : ""} ${isUnread ? "unread" : ""}" data-id="${art.id}" ${highlightColor ? `data-highlight="${this.escape(highlightColor)}"` : ""} style="${highlightStyle}">
           ${cellHtmls}
           <div class="col-cell col-picker-trigger" style="visibility:hidden"></div>
         </div>
@@ -883,7 +913,11 @@ export class ListView {
       const isSelected = id === selectedId;
       row.classList.toggle("selected", isSelected);
       if (isSelected) {
-        row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        const containerRect = this.bodyEl.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        if (rowRect.top < containerRect.top || rowRect.bottom > containerRect.bottom) {
+          row.scrollIntoView({ block: "nearest", behavior: "auto" });
+        }
       }
     });
   }

@@ -116,3 +116,58 @@ def test_rule_actions_and_stop_processing():
     assert processed_art.is_starred is False  # 規則 2 未被執行
     assert any("mark_read" in a for a in executed)
     assert any("trash" in a for a in executed)
+
+
+def test_rule_condition_empty_and_not_empty_operators():
+    """測試空值與非空值比對運算子 (Test empty, not empty, equals/not_equals blank)."""
+    article_with_title = ArticleDTO(
+        guid="test-3",
+        url="https://example.com/item3",
+        title="有標題文章",
+        author="",
+        content_text="內文",
+    )
+    article_blank_title = ArticleDTO(
+        guid="test-4",
+        url="https://example.com/item4",
+        title="",
+        author="某作者",
+        content_text="",
+    )
+
+    # 1. 標題 不是 空白 (IS_NOT_EMPTY)
+    cond_not_empty = RuleCondition(
+        field=RuleField.TITLE,
+        operator=RuleOperator.IS_NOT_EMPTY,
+        value="",
+    )
+    assert RuleEngine.evaluate_condition(cond_not_empty, article_with_title) is True
+    assert RuleEngine.evaluate_condition(cond_not_empty, article_blank_title) is False
+
+    # 2. 標題 為 空白 (IS_EMPTY)
+    cond_empty = RuleCondition(
+        field=RuleField.TITLE,
+        operator=RuleOperator.IS_EMPTY,
+        value="",
+    )
+    assert RuleEngine.evaluate_condition(cond_empty, article_with_title) is False
+    assert RuleEngine.evaluate_condition(cond_empty, article_blank_title) is True
+
+    # 3. 標題 not_equals "" (不是空白)
+    cond_not_eq_blank = RuleCondition(
+        field=RuleField.TITLE,
+        operator=RuleOperator.NOT_EQUALS,
+        value="",
+    )
+    assert RuleEngine.evaluate_condition(cond_not_eq_blank, article_with_title) is True
+    assert RuleEngine.evaluate_condition(cond_not_eq_blank, article_blank_title) is False
+
+    # 4. 作者 equals "" (作者為空)
+    cond_author_eq_blank = RuleCondition(
+        field=RuleField.AUTHOR,
+        operator=RuleOperator.EQUALS,
+        value="",
+    )
+    assert RuleEngine.evaluate_condition(cond_author_eq_blank, article_with_title) is True
+    assert RuleEngine.evaluate_condition(cond_author_eq_blank, article_blank_title) is False
+

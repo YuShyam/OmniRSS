@@ -11,6 +11,39 @@
 import { store } from "./state.js";
 import { t } from "./i18n.js";
 
+export const OFFICIAL_GEMINI_PRESETS = [
+  {
+    id: "standard",
+    name: "標準重點條列",
+    is_builtin: true,
+    prompt: "請針對以下文章內容，以繁體中文 (Traditional Chinese, 台灣習慣用語) 產出 {bullets} 點客觀且高資訊密度的重點摘要。\n輸出格式請直接以 Markdown 條列清單 ( - ) 回覆，勿加入多餘前綴開場白：\n\n標題：{title}\n\n內文：\n{content}"
+  },
+  {
+    id: "tldr",
+    name: "極簡 TL;DR 結論",
+    is_builtin: true,
+    prompt: "請針對以下文章，以極度精準、簡明扼要的繁體中文提供 TL;DR 核心結論（1~2 句總結 + {bullets} 點核心事實）：\n輸出格式請直接以 Markdown 條列清單 ( - ) 回覆：\n\n標題：{title}\n\n內文：\n{content}"
+  },
+  {
+    id: "insights",
+    name: "產業與數據洞察",
+    is_builtin: true,
+    prompt: "請以產業分析師視角，針對以下文章提取關鍵數據、核心趨勢與實質影響（{bullets} 點 Markdown 條列清單，繁體中文）：\n\n標題：{title}\n\n內文：\n{content}"
+  },
+  {
+    id: "entertainment",
+    name: "影視與娛樂看點",
+    is_builtin: true,
+    prompt: "請針對以下影視/娛樂作品或介紹文章，以繁體中文 (Traditional Chinese) 提煉出 {bullets} 個核心重點與看點精華（包括作品特色、核心亮點與主要風格）：\n輸出格式請直接以 Markdown 條列清單 ( - ) 回覆：\n\n標題：{title}\n\n內文：\n{content}"
+  },
+  {
+    id: "roast",
+    name: "犀利幽默短評",
+    is_builtin: true,
+    prompt: "請以毒舌、幽默但切中要害的犀利風格，針對以下內容進行繁體中文短評，給出 {bullets} 個讓人會心一笑或直擊痛點的點評：\n\n標題：{title}\n\n內文：\n{content}"
+  }
+];
+
 class PluginRegistry {
   constructor() {
     this.slots = {
@@ -89,7 +122,24 @@ class PluginRegistry {
         const authorBadge = showInlineAuthor
           ? `<span class="inline-author-badge" title="${t("columns.author_title", { author: escapeFn(author) })}"><span class="author-icon">✍️</span>${escapeFn(author)}</span>`
           : "";
-        return `<div class="col-cell col-title" title="${escapeFn(art.title || "")}"><span class="title-text">${titleText}</span>${authorBadge}</div>`;
+
+        const applied = art.applied_plugins || [];
+        const pluginBadges = applied.length > 0
+          ? applied
+              .map((pId) => {
+                // 從 store 動態查詢外掛的 badge 元資料，完全移除硬編碼字典
+                const allPlugins = store.get("plugins") || [];
+                const pluginObj = allPlugins.find((p) => (p.plugin_id || p.id) === pId);
+                const badge = pluginObj && pluginObj.badge;
+                const shortName = badge ? badge.short_name : (pluginObj ? (pluginObj.name && typeof pluginObj.name === "object" ? Object.values(pluginObj.name)[0] : pluginObj.name) : pId.split("/")[1] || pId);
+                const icon = badge ? badge.icon : "🧩";
+                const color = badge ? badge.color : "#60a5fa";
+                return `<span class="inline-plugin-badge" title="已套用 ${escapeFn(shortName)} 外掛增強" style="font-size: 10px; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: rgba(255,255,255,0.08); color: ${color}; font-weight: 600;">${icon}${shortName}</span>`;
+              })
+              .join("")
+          : "";
+
+        return `<div class="col-cell col-title" title="${escapeFn(art.title || "")}"><span class="title-text">${titleText}</span>${pluginBadges}${authorBadge}</div>`;
       },
     });
 
@@ -125,7 +175,10 @@ class PluginRegistry {
       renderCell: (art, escapeFn) => {
         const feedTitle = escapeFn(art.feed_title || "");
         const feedId = art.feed_id || "";
-        return `<div class="col-cell col-feed feed-name" title="${feedTitle} (${t("columns.click_filter_feed")})"><span class="feed-name-link clickable-feed-filter" data-feed-id="${feedId}">${feedTitle}</span></div>`;
+        const dupBadge = art.duplicate_feeds && art.duplicate_feeds.length > 0
+          ? `<span class="duplicate-feeds-badge" title="${t("columns.duplicate_feeds_hint", { feeds: escapeFn(art.duplicate_feeds.join(", ")) }) || ("同時來自：" + escapeFn(art.duplicate_feeds.join(", ")))}" style="font-size: 10px; opacity: 0.8; margin-left: 4px; padding: 1px 4px; border-radius: 3px; background: rgba(125,125,125,0.15); font-weight: 500;">+${art.duplicate_feeds.length}</span>`
+          : "";
+        return `<div class="col-cell col-feed feed-name" title="${feedTitle} (${t("columns.click_filter_feed")})"><span class="feed-name-link clickable-feed-filter" data-feed-id="${feedId}">${feedTitle}</span>${dupBadge}</div>`;
       },
     });
 
